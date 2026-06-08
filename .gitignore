@@ -1,0 +1,11 @@
+target/
+.agents/
+.codex/
+.worktrees/
+
+# Source-build artifacts when backend scripts are run from the repo root.
+llvm-project-*/
+llvm-project-*.tar.xz
+llvm-project-*.src.tar.xz
+gcc-*/
+gcc-*.tar.xz
