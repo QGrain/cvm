@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-10T13:16:38Z",
+  "generated_at": "2026-06-10T13:25:29Z",
   "cvm": {
     "latest": "v0.0.2"
   },
@@ -648,6 +648,11 @@
       }
     ],
     "llvm": [
+      {
+        "version": "22.1.7",
+        "date": "2026-06-02",
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.7/llvm-project-22.1.7.src.tar.xz"
+      },
       {
         "version": "22.1.6",
         "date": "2026-05-19",
