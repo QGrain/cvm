@@ -70,7 +70,7 @@ def extract_datetime_near(body: str, start: int) -> str | None:
 def parse_llvm_releases_page(body: str) -> tuple[list[dict[str, str]], str | None]:
     entries: list[dict[str, str]] = []
     seen: set[str] = set()
-    pattern = re.compile(r'/llvm/llvm-project/releases/tag/llvmorg-([0-9]+\.[0-9]+\.[0-9]+(?:-rc[0-9]+)?)')
+    pattern = re.compile(r'/llvm/llvm-project/tree/llvmorg-([0-9]+\.[0-9]+\.[0-9]+(?:-rc[0-9]+)?)')
     for match in pattern.finditer(body):
         version = html.unescape(match.group(1))
         if version in seen or version_key(version) < version_key(LLVM_MIN_VERSION):
@@ -82,7 +82,7 @@ def parse_llvm_releases_page(body: str) -> tuple[list[dict[str, str]], str | Non
         entries.append({"version": version, "date": date, "url": llvm_url(version)})
 
     next_url = None
-    next_match = re.search(r'<a[^>]+href="([^"]+)"[^>]+rel="next"', body)
+    next_match = re.search(r'<a\b(?=[^>]*\brel="next")(?=[^>]*\bhref="([^"]+)")[^>]*>', body)
     if next_match:
         next_url = urljoin(LLVM_RELEASES_URL, html.unescape(next_match.group(1)))
     return entries, next_url
