@@ -10,7 +10,7 @@ without modifying system compilers.
 
 ## Version
 
-Current release: `v0.0.1`
+Current release: `v0.0.2`
 
 ## Installation
 
@@ -25,7 +25,7 @@ cd cvm
 Install from a release tag:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.2/install.sh | bash
 ```
 
 The installer places `cvm` under `$HOME/.cvm/bin`, writes `$HOME/.cvm/cvm.sh`,
@@ -38,13 +38,12 @@ from a downloaded script, it first tries the matching binary release asset for
 the selected tag, then falls back to the GitHub source archive and builds it
 locally with Cargo.
 
-Source builds require Rust/Cargo 1.65 or newer.
+Source builds require Rust/Cargo 1.85 or newer.
 
-Override the release tag with either form:
+Override the release tag when using the `main` installer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.1/install.sh | CVM_VERSION=v0.0.1 bash
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash -s -- --version v0.0.1
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash -s -- --version v0.0.2
 ```
 
 ## Usage
@@ -54,6 +53,18 @@ Install compilers:
 ```sh
 cvm install llvm 21.1.8 -j8
 cvm install gcc 15.1.0 -j8
+```
+
+When the first managed version of a compiler family is installed, cvm sets it
+as the persistent default automatically. Existing defaults and custom
+`--prefix` installs are left unchanged.
+
+List remote versions:
+
+```sh
+cvm ls-remote
+cvm ls-remote llvm
+cvm ls-remote gcc
 ```
 
 Use a compiler in the current shell:
@@ -84,6 +95,14 @@ cvm current
 cvm version
 ```
 
+Check for and install a new cvm release:
+
+```sh
+cvm version
+cvm upgrade --dry-run
+cvm upgrade
+```
+
 Uninstall a toolchain:
 
 ```sh
@@ -94,12 +113,14 @@ cvm uninstall llvm 17.0.6
 
 ```text
 cvm install <llvm|gcc> <version> [-jN|--jobs N]
+cvm ls-remote [llvm|gcc]
 cvm ls [llvm|gcc]
 cvm use <llvm|gcc> [version]
 cvm alias default <llvm|gcc> <version>
 cvm current [llvm|gcc]
 cvm env <llvm|gcc> [version]
 cvm uninstall <llvm|gcc> <version>
+cvm upgrade [version] [--dry-run]
 cvm init
 cvm version
 ```
@@ -172,6 +193,21 @@ binary at compile time:
 `cvm install` materializes the selected backend under `$CVM_HOME/scripts` and
 invokes it with a versioned prefix.
 
+`cvm ls-remote` reads the compiler version list from
+`manifests/remote-index.json` in the cvm repository. The manifest is maintained
+by the project and synchronized from upstream GCC and LLVM release pages.
+
+Network commands such as `cvm version`, `cvm upgrade`, and `cvm ls-remote`
+respect standard proxy environment variables including `HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY`, and their lowercase forms.
+
+Set `CVM_REMOTE_INDEX_URL` to point cvm at a mirrored remote index when using
+cvm in a restricted network.
+
+The repository includes a scheduled GitHub Action that runs
+`tools/update_remote_index.py` and opens a `Synchronize compiler remote index`
+pull request when upstream compiler metadata changes.
+
 On Debian/Ubuntu systems, the backend scripts run `sudo apt update` and
 `sudo apt install` for required build packages before compiling. `sudo` prompts
 normally in the terminal when credentials are needed. In non-interactive
@@ -185,6 +221,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 bash -n scripts/build_llvm-project.sh
 bash -n scripts/build_gcc.sh
+python3 tools/update_remote_index.py --output manifests/remote-index.json
 ```
 
 ## Repository

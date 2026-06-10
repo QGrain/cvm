@@ -1,0 +1,32 @@
+name: Synchronize remote index
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Synchronize compiler remote index
+        run: python3 tools/update_remote_index.py --output manifests/remote-index.json
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: synchronize-compiler-remote-index
+          commit-message: "Synchronize compiler remote index"
+          title: "Synchronize compiler remote index"
+          body: |
+            This PR synchronizes `manifests/remote-index.json` with upstream GCC and LLVM release metadata.

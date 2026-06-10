@@ -8,7 +8,7 @@
 
 ## 版本
 
-当前版本：`v0.0.1`
+当前版本：`v0.0.2`
 
 ## 安装
 
@@ -23,20 +23,19 @@ cd cvm
 从指定 release tag 安装：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.2/install.sh | bash
 ```
 
 安装器会把 `cvm` 放到 `$HOME/.cvm/bin`，生成 `$HOME/.cvm/cvm.sh`，并向检测到的 shell profile 追加加载片段。设置 `PROFILE=/dev/null` 可以跳过 profile 修改。
 
 如果 `install.sh` 是在本地 checkout 内运行，它会直接对当前 checkout 执行 `cargo build --release`，不会下载 GitHub release asset。如果它是通过下载脚本运行，则会先尝试下载指定 tag 对应的二进制 release asset；如果该 asset 不存在，则回退到 GitHub source archive 并在本地用 Cargo 构建。
 
-源码构建需要 Rust/Cargo 1.65 或更新版本。
+源码构建需要 Rust/Cargo 1.85 或更新版本。
 
-可以用下面两种方式覆盖安装 tag：
+使用 `main` 分支安装脚本时，可以显式指定安装 tag：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.1/install.sh | CVM_VERSION=v0.0.1 bash
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash -s -- --version v0.0.1
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash -s -- --version v0.0.2
 ```
 
 ## 使用
@@ -46,6 +45,16 @@ curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash -
 ```sh
 cvm install llvm 21.1.8 -j8
 cvm install gcc 15.1.0 -j8
+```
+
+当某个编译器类别第一次安装受 cvm 管理的版本时，cvm 会自动把它设置为持久默认版本。已有 default 或使用自定义 `--prefix` 安装时不会被改动。
+
+查看远端可下载版本：
+
+```sh
+cvm ls-remote
+cvm ls-remote llvm
+cvm ls-remote gcc
 ```
 
 在当前 shell 中使用某个版本：
@@ -75,6 +84,14 @@ cvm current
 cvm version
 ```
 
+检查并升级 cvm 自身：
+
+```sh
+cvm version
+cvm upgrade --dry-run
+cvm upgrade
+```
+
 卸载工具链：
 
 ```sh
@@ -85,12 +102,14 @@ cvm uninstall llvm 17.0.6
 
 ```text
 cvm install <llvm|gcc> <version> [-jN|--jobs N]
+cvm ls-remote [llvm|gcc]
 cvm ls [llvm|gcc]
 cvm use <llvm|gcc> [version]
 cvm alias default <llvm|gcc> <version>
 cvm current [llvm|gcc]
 cvm env <llvm|gcc> [version]
 cvm uninstall <llvm|gcc> <version>
+cvm upgrade [version] [--dry-run]
 cvm init
 cvm version
 ```
@@ -155,6 +174,14 @@ $HOME/.cvm/scripts/
 
 `cvm install` 会把对应后端写入 `$CVM_HOME/scripts`，再以版本化 prefix 调用。
 
+`cvm ls-remote` 会读取 cvm 仓库中的 `manifests/remote-index.json`。该 manifest 由项目维护，并从上游 GCC 和 LLVM release 页面同步。
+
+`cvm version`、`cvm upgrade`、`cvm ls-remote` 这类网络命令会遵循标准代理环境变量，包括 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 及其小写形式。
+
+在受限网络中使用 cvm 时，可以设置 `CVM_REMOTE_INDEX_URL` 指向内网镜像的 remote index。
+
+仓库包含一个定时 GitHub Action，会运行 `tools/update_remote_index.py`，并在上游编译器元数据发生变化时创建标题为 `Synchronize compiler remote index` 的 PR。
+
 在 Debian/Ubuntu 系统中，后端脚本会先执行 `sudo apt update` 和 `sudo apt install` 安装构建依赖，然后再编译源码。需要 sudo 凭据时，终端会正常提示输入密码。非交互式环境中，请提前安装依赖或配置 passwordless sudo。
 
 ## 开发
@@ -165,6 +192,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 bash -n scripts/build_llvm-project.sh
 bash -n scripts/build_gcc.sh
+python3 tools/update_remote_index.py --output manifests/remote-index.json
 ```
 
 ## 仓库

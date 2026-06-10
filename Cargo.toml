@@ -1,8 +1,8 @@
 [package]
 name = "cvm"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.85"
 license = "Apache-2.0"
 description = "Compiler version manager for LLVM and GCC"
 repository = "https://github.com/QGrain/cvm"
@@ -10,6 +10,11 @@ homepage = "https://github.com/QGrain/cvm"
 readme = "README.md"
 keywords = ["compiler", "llvm", "gcc", "version-manager"]
 categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", features = ["proxy-from-env"] }
 
 [lib]
 name = "cvm"

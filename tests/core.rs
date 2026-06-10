@@ -1,6 +1,6 @@
 use cvm::{
-    cvm_home_from_env, env_script, init_script, install_prefix_for_home, parse_tool_spec,
-    resolve_active_version, Tool, ToolSpec, Version,
+    cvm_home_from_env, env_script, init_script, install_prefix_for_home, parse_remote_index_latest,
+    parse_remote_index_versions, parse_tool_spec, resolve_active_version, Tool, ToolSpec, Version,
 };
 use std::ffi::OsString;
 use std::path::Path;
@@ -98,4 +98,41 @@ fn default_home_is_home_dot_cvm_and_prefixes_live_under_toolchains() {
 
     let prefix = install_prefix_for_home(&cvm_home, Tool::Llvm, &Version::parse("21.1.8").unwrap());
     assert_eq!(prefix, Path::new("/home/alice/.cvm/toolchains/llvm/21.1.8"));
+}
+
+#[test]
+fn parses_remote_index_versions_dates_and_urls() {
+    let index = r#"
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T00:00:00Z",
+  "cvm": {"latest": "v0.0.3"},
+  "compilers": {
+    "gcc": [
+      {"version": "14.2.0", "date": "2024-08-01", "url": "https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"},
+      {"version": "15.1.0", "date": "2025-04-25", "url": "https://ftp.gnu.org/gnu/gcc/gcc-15.1.0/gcc-15.1.0.tar.xz"}
+    ],
+    "llvm": [
+      {"version": "10.0.1", "date": "2020-08-06", "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/llvm-project-10.0.1.tar.xz"},
+      {"version": "21.1.8", "date": "2026-01-07", "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/llvm-project-21.1.8.src.tar.xz"}
+    ]
+  }
+}
+"#;
+
+    assert_eq!(
+        parse_remote_index_latest(index).unwrap().to_string(),
+        "0.0.3"
+    );
+
+    let gcc = parse_remote_index_versions(index, Tool::Gcc).unwrap();
+    assert_eq!(gcc[0].version.to_string(), "15.1.0");
+    assert_eq!(gcc[0].date.as_deref(), Some("2025-04-25"));
+    assert!(gcc[0].url.ends_with("gcc-15.1.0.tar.xz"));
+
+    let llvm = parse_remote_index_versions(index, Tool::Llvm).unwrap();
+    assert_eq!(llvm[0].version.to_string(), "21.1.8");
+    assert_eq!(llvm[0].date.as_deref(), Some("2026-01-07"));
+    assert!(llvm[0].url.ends_with("llvm-project-21.1.8.src.tar.xz"));
+    assert!(llvm[1].url.ends_with("llvm-project-10.0.1.tar.xz"));
 }

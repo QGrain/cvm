@@ -7,11 +7,18 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::Deserialize;
 
 pub const CVM_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const LLVM_BUILD_SCRIPT: &str = include_str!("../scripts/build_llvm-project.sh");
 const GCC_BUILD_SCRIPT: &str = include_str!("../scripts/build_gcc.sh");
+const DEFAULT_REMOTE_INDEX: &str = include_str!("../manifests/remote-index.json");
+const CVM_REPO: &str = "QGrain/cvm";
+const DEFAULT_REMOTE_INDEX_URL: &str =
+    "https://raw.githubusercontent.com/QGrain/cvm/main/manifests/remote-index.json";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Version {
@@ -144,6 +151,44 @@ pub struct ToolSpec {
     pub version: Version,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RemoteVersion {
+    pub version: Version,
+    pub date: Option<String>,
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoteIndex {
+    schema_version: u32,
+    #[serde(rename = "generated_at")]
+    _generated_at: String,
+    cvm: CvmRemoteIndex,
+    compilers: CompilerRemoteIndex,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CvmRemoteIndex {
+    latest: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompilerRemoteIndex {
+    llvm: Vec<RemoteIndexEntry>,
+    gcc: Vec<RemoteIndexEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoteIndexEntry {
+    version: String,
+    date: String,
+    url: String,
+}
+
 pub fn parse_tool_spec(input: &str) -> Result<ToolSpec, String> {
     let (tool, version) = input
         .split_once('@')
@@ -152,6 +197,16 @@ pub fn parse_tool_spec(input: &str) -> Result<ToolSpec, String> {
         tool: Tool::from_str(tool)?,
         version: Version::parse(version)?,
     })
+}
+
+pub fn parse_remote_index_versions(input: &str, tool: Tool) -> Result<Vec<RemoteVersion>, String> {
+    let index = parse_remote_index(input)?;
+    Ok(remote_versions_from_index(&index, tool))
+}
+
+pub fn parse_remote_index_latest(input: &str) -> Result<Version, String> {
+    let index = parse_remote_index(input)?;
+    parse_cvm_tag(&index.cvm.latest)
 }
 
 pub fn env_script(tool: Tool, prefix: &Path) -> String {
@@ -251,20 +306,43 @@ pub fn run_cli_result(args: Vec<String>) -> Result<(), String> {
             print_help();
             Ok(())
         }
-        "version" | "--version" | "-V" => {
+        "--version" | "-V" => {
             println!("cvm {CVM_VERSION}");
             Ok(())
         }
+        "version" => cmd_version(&rest),
         "install" => cmd_install(&rest),
+        "ls-remote" => cmd_ls_remote(&rest),
         "ls" | "list" => cmd_list(&rest),
         "use" => cmd_use(&rest),
         "env" => cmd_env(&rest),
         "alias" => cmd_alias(&rest),
         "current" => cmd_current(&rest),
         "uninstall" => cmd_uninstall(&rest),
+        "upgrade" => cmd_upgrade(&rest),
         "init" => cmd_init(&rest),
         other => Err(format!("unknown command: {other}")),
     }
+}
+
+fn cmd_version(args: &[String]) -> Result<(), String> {
+    if !args.is_empty() {
+        return Err("usage: cvm version".into());
+    }
+    println!("cvm {CVM_VERSION}");
+    match latest_cvm_release() {
+        Ok(latest) => {
+            let current = Version::parse(CVM_VERSION)?;
+            if latest > current {
+                println!("new version available: v{latest}");
+                println!("run: cvm upgrade");
+            } else {
+                println!("cvm is up to date");
+            }
+        }
+        Err(err) => println!("warning: failed to check remote index: {err}"),
+    }
+    Ok(())
 }
 
 fn cmd_install(args: &[String]) -> Result<(), String> {
@@ -310,6 +388,7 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
         idx += 1;
     }
 
+    let using_custom_prefix = options.prefix.is_some();
     let prefix = options
         .prefix
         .clone()
@@ -342,7 +421,37 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
 
     let mut command = Command::new("bash");
     command.args(command_args);
-    run_command(command)
+    run_command(command)?;
+    maybe_alias_default_after_install(tool, &version, using_custom_prefix)
+}
+
+fn cmd_ls_remote(args: &[String]) -> Result<(), String> {
+    if args.len() > 1 {
+        return Err("usage: cvm ls-remote [llvm|gcc]".into());
+    }
+    let tools = if let Some(tool) = args.first() {
+        vec![Tool::from_str(tool)?]
+    } else {
+        Tool::all().to_vec()
+    };
+
+    for (idx, tool) in tools.iter().enumerate() {
+        if idx > 0 {
+            println!();
+        }
+        println!("{tool}:");
+        let releases = remote_versions(*tool)?;
+        if releases.is_empty() {
+            println!("  <none>");
+        } else {
+            for release in releases {
+                let date = release.date.unwrap_or_else(|| "-".to_string());
+                println!("  {:<14} {}", release.version, date);
+            }
+        }
+        println!("  compatibility: {}", compatibility_note(*tool));
+    }
+    Ok(())
 }
 
 fn cmd_list(args: &[String]) -> Result<(), String> {
@@ -472,6 +581,52 @@ fn cmd_uninstall(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn cmd_upgrade(args: &[String]) -> Result<(), String> {
+    let mut dry_run = false;
+    let mut requested = None;
+    for arg in args {
+        match arg.as_str() {
+            "--dry-run" => dry_run = true,
+            "-h" | "--help" => {
+                println!("usage: cvm upgrade [version] [--dry-run]");
+                return Ok(());
+            }
+            value if value.starts_with('-') => {
+                return Err(format!("unknown upgrade option: {value}"))
+            }
+            value => {
+                if requested.is_some() {
+                    return Err("usage: cvm upgrade [version] [--dry-run]".into());
+                }
+                requested = Some(value.to_string());
+            }
+        }
+    }
+
+    let tag = match requested {
+        Some(version) => normalize_cvm_tag(&version)?,
+        None => format!("v{}", latest_cvm_release()?),
+    };
+    let installer = format!("https://raw.githubusercontent.com/{CVM_REPO}/{tag}/install.sh");
+    let asset = binary_asset_name()?;
+
+    if dry_run {
+        println!("upgrade: {tag}");
+        println!("installer: {installer}");
+        println!("asset: {asset}");
+        return Ok(());
+    }
+
+    let body = fetch_text(&installer)?;
+    let script = temporary_script_path("cvm-upgrade");
+    fs::write(&script, body).map_err(|e| format!("failed to write {}: {e}", script.display()))?;
+    let mut command = Command::new("bash");
+    command.arg(&script).arg("--version").arg(&tag);
+    let result = run_command(command);
+    let _ = fs::remove_file(&script);
+    result
+}
+
 fn cmd_init(args: &[String]) -> Result<(), String> {
     if !args.is_empty() {
         return Err("usage: cvm init".into());
@@ -510,6 +665,22 @@ fn resolve_requested_version(tool: Tool, explicit: Option<&str>) -> Result<Versi
     Version::parse(&chosen)
 }
 
+fn maybe_alias_default_after_install(
+    tool: Tool,
+    version: &Version,
+    using_custom_prefix: bool,
+) -> Result<(), String> {
+    if using_custom_prefix || read_global_version(tool)?.is_some() {
+        return Ok(());
+    }
+    let versions = installed_versions(tool)?;
+    if versions.len() == 1 && versions.first() == Some(version) {
+        write_global_version(tool, version)?;
+        println!("default {tool} -> {version}");
+    }
+    Ok(())
+}
+
 fn installed_versions(tool: Tool) -> Result<Vec<Version>, String> {
     let root = cvm_home()?.join("toolchains").join(tool.as_str());
     if !root.exists() {
@@ -533,6 +704,143 @@ fn installed_versions(tool: Tool) -> Result<Vec<Version>, String> {
         }
     }
     Ok(versions)
+}
+
+fn remote_versions(tool: Tool) -> Result<Vec<RemoteVersion>, String> {
+    let index = load_remote_index()?;
+    Ok(remote_versions_from_index(&index, tool))
+}
+
+fn latest_cvm_release() -> Result<Version, String> {
+    let index = load_remote_index()?;
+    parse_cvm_tag(&index.cvm.latest)
+}
+
+fn load_remote_index() -> Result<RemoteIndex, String> {
+    let url = env::var("CVM_REMOTE_INDEX_URL").unwrap_or_else(|_| DEFAULT_REMOTE_INDEX_URL.into());
+    let body = if url == "builtin" {
+        DEFAULT_REMOTE_INDEX.to_string()
+    } else {
+        fetch_text(&url)?
+    };
+    parse_remote_index(&body)
+}
+
+fn parse_remote_index(input: &str) -> Result<RemoteIndex, String> {
+    let index: RemoteIndex =
+        serde_json::from_str(input).map_err(|e| format!("failed to parse remote index: {e}"))?;
+    if index.schema_version != 1 {
+        return Err(format!(
+            "unsupported remote index schema version: {}",
+            index.schema_version
+        ));
+    }
+    Ok(index)
+}
+
+fn remote_versions_from_index(index: &RemoteIndex, tool: Tool) -> Vec<RemoteVersion> {
+    let entries = match tool {
+        Tool::Llvm => &index.compilers.llvm,
+        Tool::Gcc => &index.compilers.gcc,
+    };
+    let mut versions: Vec<RemoteVersion> = entries
+        .iter()
+        .filter_map(|entry| {
+            let version = Version::parse(&entry.version).ok()?;
+            Some(RemoteVersion {
+                version,
+                date: Some(entry.date.clone()),
+                url: entry.url.clone(),
+            })
+        })
+        .collect();
+    versions.sort_by(|lhs, rhs| rhs.version.cmp(&lhs.version));
+    versions.dedup_by(|lhs, rhs| lhs.version == rhs.version);
+    versions
+}
+
+fn fetch_text(url: &str) -> Result<String, String> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return fs::read_to_string(path).map_err(|e| format!("failed to read {path}: {e}"));
+    }
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(5))
+        .try_proxy_from_env(true)
+        .build();
+    let request = agent
+        .get(url)
+        .set("User-Agent", &format!("cvm/{CVM_VERSION}"));
+
+    request
+        .call()
+        .map_err(|e| describe_fetch_error(url, e))?
+        .into_string()
+        .map_err(|e| format!("failed to read response from {url}: {e}"))
+}
+
+fn describe_fetch_error(url: &str, err: ureq::Error) -> String {
+    match err {
+        ureq::Error::Status(code, response) => {
+            let body = response.into_string().unwrap_or_default();
+            let mut message = format!("failed to fetch {url}: status code {code}");
+            let body = body.trim();
+            if !body.is_empty() {
+                message.push_str("; ");
+                message.push_str(&body.chars().take(240).collect::<String>());
+            }
+            message
+        }
+        other => format!("failed to fetch {url}: {other}"),
+    }
+}
+
+fn compatibility_note(tool: Tool) -> String {
+    let platform = binary_platform_name().unwrap_or_else(|err| format!("unsupported ({err})"));
+    match tool {
+        Tool::Gcc => format!(
+            "{platform}; source builds use GNU GCC releases and Debian/Ubuntu apt dependency bootstrap"
+        ),
+        Tool::Llvm => format!(
+            "{platform}; source builds support LLVM >= 9.0.1 and Debian/Ubuntu apt dependency bootstrap"
+        ),
+    }
+}
+
+fn binary_asset_name() -> Result<String, String> {
+    Ok(format!("cvm-{}.tar.gz", binary_platform_name()?))
+}
+
+fn binary_platform_name() -> Result<String, String> {
+    let os = match env::consts::OS {
+        "linux" => "unknown-linux-gnu",
+        "macos" => "apple-darwin",
+        other => return Err(format!("unsupported OS: {other}")),
+    };
+    let arch = match env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        other => return Err(format!("unsupported arch: {other}")),
+    };
+    Ok(format!("{arch}-{os}"))
+}
+
+fn normalize_cvm_tag(input: &str) -> Result<String, String> {
+    parse_cvm_tag(input)?;
+    let version = input.strip_prefix('v').unwrap_or(input);
+    Ok(format!("v{version}"))
+}
+
+fn parse_cvm_tag(input: &str) -> Result<Version, String> {
+    Version::parse(input.strip_prefix('v').unwrap_or(input))
+}
+
+fn temporary_script_path(prefix: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    env::temp_dir().join(format!("{prefix}-{}-{stamp}.sh", std::process::id()))
 }
 
 fn ensure_installed(tool: Tool, version: &Version, prefix: &Path) -> Result<(), String> {
@@ -773,18 +1081,22 @@ fn print_help() {
         "cvm {CVM_VERSION} - compiler version manager\n\n\
          Usage:\n\
            cvm install <llvm|gcc> <version> [-jN|--jobs N]\n\
+           cvm ls-remote [llvm|gcc]\n\
            cvm ls [llvm|gcc]\n\
            cvm use <llvm|gcc> [version]\n\
            cvm alias default <llvm|gcc> <version>\n\
            cvm current [llvm|gcc]\n\
            cvm env <llvm|gcc> [version]\n\
            cvm uninstall <llvm|gcc> <version>\n\
+           cvm upgrade [version] [--dry-run]\n\
            cvm init\n\
            cvm version\n\n\
          Examples:\n\
            cvm install llvm 21.1.8 -j8\n\
+           cvm ls-remote llvm\n\
            eval \"$(cvm use llvm 21.1.8)\"\n\
            cvm alias default llvm 21.1.8\n\
+           cvm upgrade --dry-run\n\
            eval \"$(cvm init)\"\n"
     );
 }
