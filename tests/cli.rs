@@ -191,6 +191,16 @@ fn alias_default_persists_and_env_uses_it() {
 }
 
 #[test]
+fn env_without_version_requires_global_default() {
+    let home = cvm_home("env-no-default");
+    mark_installed(&home, "llvm", "21.1.8");
+
+    let output = run(&home, &["env", "llvm"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no default version configured"));
+}
+
+#[test]
 fn default_home_without_cvm_home_is_home_dot_cvm() {
     let home = cvm_home("default-home-parent");
     let output = run_without_cvm_home(&home, &["install", "llvm", "21.1.8", "--dry-run"]);

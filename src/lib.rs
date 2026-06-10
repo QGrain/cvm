@@ -255,10 +255,6 @@ cvm() {
     script
 }
 
-pub fn resolve_active_version(local: Option<&str>, global: Option<&str>) -> Option<String> {
-    local.or(global).map(ToString::to_string)
-}
-
 pub fn cvm_home_from_env(
     cvm_home: Option<&OsString>,
     home: Option<&OsString>,
@@ -551,9 +547,7 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
     };
 
     for tool in tools {
-        let local = read_local_version(tool)?;
-        let global = read_global_version(tool)?;
-        match resolve_active_version(local.as_deref(), global.as_deref()) {
+        match read_global_version(tool)? {
             Some(version) => println!("{tool}: {version}"),
             None => println!("{tool}: <none>"),
         }
@@ -658,11 +652,9 @@ fn resolve_requested_version(tool: Tool, explicit: Option<&str>) -> Result<Versi
     if let Some(version) = explicit {
         return Version::parse(version);
     }
-    let local = read_local_version(tool)?;
-    let global = read_global_version(tool)?;
-    let chosen = resolve_active_version(local.as_deref(), global.as_deref())
-        .ok_or_else(|| format!("no active version configured for {tool}"))?;
-    Version::parse(&chosen)
+    let version = read_global_version(tool)?
+        .ok_or_else(|| format!("no default version configured for {tool}"))?;
+    Version::parse(&version)
 }
 
 fn maybe_alias_default_after_install(
@@ -894,53 +886,6 @@ fn read_global_version(tool: Tool) -> Result<Option<String>, String> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("failed to read {}: {e}", path.display())),
     }
-}
-
-fn read_local_version(tool: Tool) -> Result<Option<String>, String> {
-    let mut dir = env::current_dir().map_err(|e| format!("failed to read current dir: {e}"))?;
-    loop {
-        let path = dir.join(".cvmrc");
-        if path.exists() {
-            for (entry_tool, version) in read_cvmrc(&path)? {
-                if entry_tool == tool {
-                    return Ok(Some(version));
-                }
-            }
-        }
-        if !dir.pop() {
-            return Ok(None);
-        }
-    }
-}
-
-fn read_cvmrc(path: &Path) -> Result<Vec<(Tool, String)>, String> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
-    };
-
-    let mut entries = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let (tool, version) = if let Some((tool, version)) = line.split_once('=') {
-            (tool.trim(), version.trim())
-        } else if let Some((tool, version)) = line.split_once('@') {
-            (tool.trim(), version.trim())
-        } else {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() != 2 {
-                return Err(format!("invalid .cvmrc line: {line}"));
-            }
-            (parts[0], parts[1])
-        };
-        Version::parse(version)?;
-        entries.push((Tool::from_str(tool)?, version.to_string()));
-    }
-    Ok(entries)
 }
 
 fn ensure_build_script(tool: Tool) -> Result<PathBuf, String> {

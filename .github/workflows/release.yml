@@ -1,0 +1,100 @@
+name: Release
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, for example v0.0.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
+
+  build:
+    needs: create-release
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            asset: cvm-x86_64-unknown-linux-gnu.tar.gz
+            apt: ""
+            linker: ""
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            asset: cvm-aarch64-unknown-linux-gnu.tar.gz
+            apt: gcc-aarch64-linux-gnu
+            linker: aarch64-linux-gnu-gcc
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            asset: cvm-x86_64-apple-darwin.tar.gz
+            apt: ""
+            linker: ""
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            asset: cvm-aarch64-apple-darwin.tar.gz
+            apt: ""
+            linker: ""
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux cross linker
+        if: matrix.apt != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.linker }}
+        run: |
+          set -euo pipefail
+          rustup target add "${{ matrix.target }}"
+          cargo build --locked --release --target "${{ matrix.target }}"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package
+          cp "target/${{ matrix.target }}/release/cvm" dist/package/cvm
+          tar -C dist/package -czf "dist/${{ matrix.asset }}" cvm
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" "dist/${{ matrix.asset }}" --repo "$GITHUB_REPOSITORY" --clobber

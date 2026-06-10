@@ -1,6 +1,6 @@
 use cvm::{
     cvm_home_from_env, env_script, init_script, install_prefix_for_home, parse_remote_index_latest,
-    parse_remote_index_versions, parse_tool_spec, resolve_active_version, Tool, ToolSpec, Version,
+    parse_remote_index_versions, parse_tool_spec, Tool, ToolSpec, Version,
 };
 use std::ffi::OsString;
 use std::path::Path;
@@ -55,19 +55,6 @@ fn emits_kernel_oriented_env_for_llvm_and_gcc() {
     assert!(gcc.contains("export HOSTCC=\"gcc\""));
     assert!(!gcc.contains("export LLVM="));
     assert!(!gcc.contains("export LD="));
-}
-
-#[test]
-fn local_version_overrides_global_default() {
-    assert_eq!(
-        resolve_active_version(Some("17.0.6"), Some("21.1.8")),
-        Some("17.0.6".to_string())
-    );
-    assert_eq!(
-        resolve_active_version(None, Some("21.1.8")),
-        Some("21.1.8".to_string())
-    );
-    assert_eq!(resolve_active_version(None, None), None);
 }
 
 #[test]

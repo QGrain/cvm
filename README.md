@@ -2,17 +2,19 @@
 
 [中文](README_CN.md)
 
-`cvm` is a per-user version manager for LLVM and GCC toolchains.
+`cvm` is a per-user compiler version manager for LLVM and GCC.
 
-It installs compiler versions from source, switches the active compiler in the
-current shell, records persistent defaults, and removes installed toolchains
-without modifying system compilers.
-
-## Version
-
-Current release: `v0.0.2`
+It installs compiler toolchains from source, switches the active compiler in
+the current shell, records persistent defaults, and keeps system compilers
+untouched.
 
 ## Installation
+
+Install a release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.2/install.sh | bash
+```
 
 Install from a local checkout:
 
@@ -22,92 +24,31 @@ cd cvm
 ./install.sh
 ```
 
-Install from a release tag:
+The installer writes `cvm` to `$HOME/.cvm/bin/cvm`, generates
+`$HOME/.cvm/cvm.sh`, and appends a small loader to the detected shell profile.
+Set `PROFILE=/dev/null` to skip profile edits.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.2/install.sh | bash
-```
+Running the installer again replaces only the cvm binary and regenerates
+`cvm.sh`; installed toolchains and defaults under `$HOME/.cvm` are preserved.
 
-The installer places `cvm` under `$HOME/.cvm/bin`, writes `$HOME/.cvm/cvm.sh`,
-and appends a small loader to the detected shell profile. Set
-`PROFILE=/dev/null` to skip profile edits.
-
-When `install.sh` is run from a local checkout, it builds that checkout with
-`cargo build --release` and does not download release assets. When it is run
-from a downloaded script, it first tries the matching binary release asset for
-the selected tag, then falls back to the GitHub source archive and builds it
-locally with Cargo.
-
-Source builds require Rust/Cargo 1.85 or newer.
-
-Override the release tag when using the `main` installer:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash -s -- --version v0.0.2
-```
-
-## Usage
-
-Install compilers:
+## Quick Start
 
 ```sh
 cvm install llvm 21.1.8 -j8
 cvm install gcc 15.1.0 -j8
+
+cvm ls-remote llvm
+cvm ls
+
+cvm use llvm 21.1.8
+cvm alias default llvm 21.1.8
+
+cvm version
+cvm upgrade --dry-run
 ```
 
 When the first managed version of a compiler family is installed, cvm sets it
-as the persistent default automatically. Existing defaults and custom
-`--prefix` installs are left unchanged.
-
-List remote versions:
-
-```sh
-cvm ls-remote
-cvm ls-remote llvm
-cvm ls-remote gcc
-```
-
-Use a compiler in the current shell:
-
-```sh
-cvm use llvm 21.1.8
-```
-
-For scripts or shells that do not source `$CVM_HOME/cvm.sh`, evaluate the
-printed environment explicitly:
-
-```sh
-eval "$(cvm use llvm 21.1.8)"
-```
-
-Set persistent defaults:
-
-```sh
-cvm alias default llvm 21.1.8
-cvm alias default gcc 15.1.0
-```
-
-List and inspect versions:
-
-```sh
-cvm ls
-cvm current
-cvm version
-```
-
-Check for and install a new cvm release:
-
-```sh
-cvm version
-cvm upgrade --dry-run
-cvm upgrade
-```
-
-Uninstall a toolchain:
-
-```sh
-cvm uninstall llvm 17.0.6
-```
+as the persistent default automatically.
 
 ## Commands
 
@@ -125,123 +66,18 @@ cvm init
 cvm version
 ```
 
-## Shell Behavior
-
-The installer writes a profile snippet that sources `$HOME/.cvm/cvm.sh`.
-After that, `cvm use ...` works like nvm in interactive shells.
-
-`cvm use` and `cvm alias default` require the selected version to be installed.
-This avoids pointing `PATH` at a missing toolchain and accidentally falling back
-to a system compiler.
-
-For one-off shells, use:
+In interactive shells that source `$CVM_HOME/cvm.sh`, `cvm use ...` updates the
+current shell like `nvm`. In scripts or one-off shells, use:
 
 ```sh
 eval "$(cvm use llvm 21.1.8)"
 ```
 
-`cvm alias default` writes a persistent default under `$CVM_HOME/defaults`.
-Defaults are applied when `$CVM_HOME/cvm.sh` is sourced in new shells.
+## Documentation
 
-When switching versions, cvm clears the compiler variables it owns
-(`CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, `HOSTCXX`) before exporting the selected
-toolchain. It does not clear unrelated user-managed variables such as
-`CROSS_COMPILE`.
-
-## Project Defaults
-
-Create a `.cvmrc` file to select compiler versions for a project:
-
-```text
-llvm 21.1.8
-gcc 15.1.0
-```
-
-When no version is passed to `cvm use` or `cvm env`, `.cvmrc` takes precedence
-over the global default alias.
-
-## Storage
-
-`cvm` installs toolchains under:
-
-```text
-$CVM_HOME/toolchains/llvm/<version>
-$CVM_HOME/toolchains/gcc/<version>
-```
-
-If `CVM_HOME` is unset, cvm uses `$HOME/.cvm`.
-
-Default layout:
-
-```text
-$HOME/.cvm/bin/cvm
-$HOME/.cvm/cvm.sh
-$HOME/.cvm/toolchains/llvm/<version>
-$HOME/.cvm/toolchains/gcc/<version>
-$HOME/.cvm/defaults/{llvm,gcc}
-$HOME/.cvm/scripts/
-```
-
-## Build Backends
-
-The source build scripts live in `scripts/` and are embedded into the Rust
-binary at compile time:
-
-- `scripts/build_llvm-project.sh`
-- `scripts/build_gcc.sh`
-
-`cvm install` materializes the selected backend under `$CVM_HOME/scripts` and
-invokes it with a versioned prefix.
-
-`cvm ls-remote` reads the compiler version list from
-`manifests/remote-index.json` in the cvm repository. The manifest is maintained
-by the project and synchronized from upstream GCC and LLVM release pages.
-
-Network commands such as `cvm version`, `cvm upgrade`, and `cvm ls-remote`
-respect standard proxy environment variables including `HTTP_PROXY`,
-`HTTPS_PROXY`, `ALL_PROXY`, and their lowercase forms.
-
-Set `CVM_REMOTE_INDEX_URL` to point cvm at a mirrored remote index when using
-cvm in a restricted network.
-
-The repository includes a scheduled GitHub Action that runs
-`tools/update_remote_index.py` and opens a `Synchronize compiler remote index`
-pull request when upstream compiler metadata changes.
-
-On Debian/Ubuntu systems, the backend scripts run `sudo apt update` and
-`sudo apt install` for required build packages before compiling. `sudo` prompts
-normally in the terminal when credentials are needed. In non-interactive
-environments, install the dependencies first or provide passwordless sudo.
-
-## Development
-
-```sh
-cargo test
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-bash -n scripts/build_llvm-project.sh
-bash -n scripts/build_gcc.sh
-python3 tools/update_remote_index.py --output manifests/remote-index.json
-```
-
-## Repository
-
-https://github.com/QGrain/cvm
-
-## Release Assets
-
-`install.sh` first tries to download binary release assets named:
-
-```text
-cvm-x86_64-unknown-linux-gnu.tar.gz
-cvm-aarch64-unknown-linux-gnu.tar.gz
-cvm-x86_64-apple-darwin.tar.gz
-cvm-aarch64-apple-darwin.tar.gz
-```
-
-Each archive must contain an executable named `cvm` at the archive root. Binary
-assets are optional: if an asset is not available, the installer downloads the
-tagged GitHub source archive and builds cvm locally with Cargo.
+- [Design notes](docs/design.md)
+- [Release process](docs/release.md)
+- [Contribution guide](docs/contribution.md)
 
 ## Uninstalling
 
@@ -250,6 +86,11 @@ Remove the profile snippet that sources `$CVM_HOME/cvm.sh`, then remove:
 ```sh
 rm -rf "$HOME/.cvm"
 ```
+
+## Contributing
+
+Contributions are welcome. Please read the
+[contribution guide](docs/contribution.md) before opening a PR.
 
 ## License
 
