@@ -109,8 +109,8 @@ fn release_workflow_assets_match_installer_names() {
     let contribution = fs::read_to_string("docs/contribution.md").unwrap();
 
     for target in [
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
     ] {

@@ -198,7 +198,7 @@ done
 script_dir="$(resolve_script_dir || true)"
 
 case "$(uname -s)" in
-Linux) os=unknown-linux-gnu ;;
+Linux) os=unknown-linux-musl ;;
 Darwin) os=apple-darwin ;;
 *) echo "install.sh: unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac

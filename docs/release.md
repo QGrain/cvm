@@ -9,14 +9,16 @@ release does not already exist, builds cvm for each supported target, and
 uploads these assets:
 
 ```text
-cvm-x86_64-unknown-linux-gnu.tar.gz
-cvm-aarch64-unknown-linux-gnu.tar.gz
+cvm-x86_64-unknown-linux-musl.tar.gz
+cvm-aarch64-unknown-linux-musl.tar.gz
 cvm-x86_64-apple-darwin.tar.gz
 cvm-aarch64-apple-darwin.tar.gz
 ```
 
 Each archive contains a single executable named `cvm` at the archive root.
 The names must match `install.sh`.
+Linux assets use musl targets to avoid tying the executable to the glibc
+version installed on the GitHub Actions runner.
 
 The same workflow can be run manually with `workflow_dispatch` to backfill
 assets for an existing tag such as `v0.0.1`. Provide the tag input, and the

@@ -805,7 +805,7 @@ fn binary_asset_name() -> Result<String, String> {
 
 fn binary_platform_name() -> Result<String, String> {
     let os = match env::consts::OS {
-        "linux" => "unknown-linux-gnu",
+        "linux" => "unknown-linux-musl",
         "macos" => "apple-darwin",
         other => return Err(format!("unsupported OS: {other}")),
     };
