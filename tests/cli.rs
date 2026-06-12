@@ -39,7 +39,21 @@ fn run_with_env(home: &PathBuf, args: &[&str], envs: &[(&str, &str)]) -> std::pr
 }
 
 fn mark_installed(home: &Path, tool: &str, version: &str) {
-    fs::create_dir_all(home.join("toolchains").join(tool).join(version).join("bin")).unwrap();
+    let bin = home.join("toolchains").join(tool).join(version).join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    for name in [
+        "gcc",
+        "g++",
+        "gcov",
+        "clang",
+        "clang++",
+        "ld.lld",
+        "llvm-ar",
+        "llvm-nm",
+        "llvm-objcopy",
+    ] {
+        fs::write(bin.join(name), "").unwrap();
+    }
 }
 
 fn write_fixture(home: &Path, name: &str, body: &str) -> String {
@@ -85,15 +99,16 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
 
     let version = run(&home, &["--version"]);
     assert!(version.status.success());
-    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.2");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.3");
 
     let help = run(&home, &["help"]);
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
-    assert!(help.contains("cvm install <llvm|gcc> <version>"));
-    assert!(help.contains("cvm ls-remote [llvm|gcc]"));
+    assert!(help.contains("cvm install <llvm|gcc> <version-or-prefix>"));
+    assert!(help.contains("cvm ls-remote [llvm|gcc] [prefix]"));
+    assert!(help.contains("cvm which <llvm|gcc> [version-or-prefix]"));
     assert!(help.contains("cvm upgrade [version] [--dry-run]"));
-    assert!(help.contains("cvm alias default <llvm|gcc> <version>"));
+    assert!(help.contains("cvm alias default <llvm|gcc> <version-or-prefix>"));
     assert!(!help.contains("--source"));
     assert!(!help.contains("verify kernel"));
 }
@@ -110,6 +125,39 @@ fn install_dry_run_uses_embedded_build_backend_without_passthrough_separator() {
     assert!(stdout.contains("-j8"));
     assert!(stdout.contains("--prefix"));
     assert!(!stdout.contains("--source"));
+}
+
+#[test]
+fn install_dry_run_resolves_remote_version_prefix() {
+    let home = cvm_home("install-prefix");
+    let index_url = write_fixture(
+        &home,
+        "remote-index.json",
+        r#"{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T00:00:00Z",
+  "cvm": {"latest": "v0.0.3"},
+  "compilers": {
+    "gcc": [],
+    "llvm": [
+      {"version": "21.1.0", "date": "2025-09-01", "url": "https://example.com/llvm-21.1.0.tar.xz"},
+      {"version": "21.1.8", "date": "2025-12-01", "url": "https://example.com/llvm-21.1.8.tar.xz"},
+      {"version": "20.1.8", "date": "2025-08-01", "url": "https://example.com/llvm-20.1.8.tar.xz"}
+    ]
+  }
+}"#,
+    );
+
+    let output = run_with_env(
+        &home,
+        &["install", "llvm", "21", "--dry-run"],
+        &[("CVM_REMOTE_INDEX_URL", &index_url)],
+    );
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("21.1.8"));
+    assert!(!stdout.contains("21.1.0 --prefix"));
 }
 
 #[test]
@@ -181,8 +229,9 @@ fn alias_default_persists_and_env_uses_it() {
     let home = cvm_home("alias");
     mark_installed(&home, "llvm", "21.1.8");
 
-    let alias = run(&home, &["alias", "default", "llvm", "21.1.8"]);
+    let alias = run(&home, &["alias", "default", "llvm", "21"]);
     assert!(alias.status.success());
+    assert!(String::from_utf8_lossy(&alias.stdout).contains("default llvm -> 21.1.8"));
 
     let env_output = run(&home, &["env", "llvm"]);
     assert!(env_output.status.success());
@@ -241,11 +290,39 @@ fn use_prints_temporary_shell_environment_without_setting_default() {
     let home = cvm_home("use");
     mark_installed(&home, "gcc", "15.1.0");
 
-    let output = run(&home, &["use", "gcc", "15.1.0"]);
+    let output = run(&home, &["use", "gcc", "15"]);
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("export CC=\"gcc\""));
     assert!(!home.join("defaults/gcc").exists());
+}
+
+#[test]
+fn which_prints_managed_compiler_paths_for_prefix() {
+    let home = cvm_home("which");
+    mark_installed(&home, "llvm", "21.1.0");
+    mark_installed(&home, "llvm", "21.1.8");
+
+    let output = run(&home, &["which", "llvm", "21"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("llvm 21.1.8:"));
+    assert!(stdout.contains("clang:"));
+    assert!(stdout.contains("toolchains/llvm/21.1.8/bin/clang"));
+    assert!(!stdout.contains("21.1.0/bin/clang"));
+}
+
+#[test]
+fn version_prefix_without_local_match_errors() {
+    let home = cvm_home("prefix-no-match");
+    mark_installed(&home, "gcc", "14.2.0");
+
+    let output = run(&home, &["use", "gcc", "15"]);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("no installed gcc version matches prefix 15"));
 }
 
 #[test]
@@ -286,6 +363,38 @@ fn ls_remote_uses_fixture_sources_and_prints_compatibility_note() {
 }
 
 #[test]
+fn ls_remote_filters_by_version_prefix() {
+    let home = cvm_home("ls-remote-prefix");
+    let index_url = write_fixture(
+        &home,
+        "remote-index.json",
+        r#"{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T00:00:00Z",
+  "cvm": {"latest": "v0.0.3"},
+  "compilers": {
+    "gcc": [],
+    "llvm": [
+      {"version": "21.1.8", "date": "2025-12-01", "url": "https://example.com/llvm-21.1.8.tar.xz"},
+      {"version": "20.1.8", "date": "2025-08-01", "url": "https://example.com/llvm-20.1.8.tar.xz"}
+    ]
+  }
+}"#,
+    );
+
+    let output = run_with_env(
+        &home,
+        &["ls-remote", "llvm", "21"],
+        &[("CVM_REMOTE_INDEX_URL", &index_url)],
+    );
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("21.1.8"));
+    assert!(!stdout.contains("20.1.8"));
+}
+
+#[test]
 fn version_checks_latest_release_without_failing_on_network_success() {
     let home = cvm_home("version-check");
     let index_url = write_fixture(
@@ -294,7 +403,7 @@ fn version_checks_latest_release_without_failing_on_network_success() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.3"},
+  "cvm": {"latest": "v0.0.4"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -303,9 +412,13 @@ fn version_checks_latest_release_without_failing_on_network_success() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cvm 0.0.2"));
-    assert!(stdout.contains("new version available: v0.0.3"));
+    assert!(stdout.contains("cvm 0.0.3"));
+    assert!(stdout.contains("new version available: v0.0.4"));
     assert!(stdout.contains("cvm upgrade"));
+    assert!(stdout.contains("diagnostics:"));
+    assert!(stdout.contains("CVM_HOME:"));
+    assert!(stdout.contains("cvm.sh:"));
+    assert!(stdout.contains("default llvm:"));
 }
 
 #[test]
@@ -317,7 +430,7 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.3"},
+  "cvm": {"latest": "v0.0.4"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -330,9 +443,9 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("upgrade: v0.0.3"));
+    assert!(stdout.contains("upgrade: v0.0.4"));
     assert!(stdout
-        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.0.3/install.sh"));
+        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.0.4/install.sh"));
 }
 
 #[test]
@@ -371,7 +484,7 @@ fn uninstall_removes_matching_default_alias() {
         .success());
     assert!(home.join("defaults/llvm").exists());
 
-    let output = run(&home, &["uninstall", "llvm", "21.1.8"]);
+    let output = run(&home, &["uninstall", "llvm", "21"]);
     assert!(output.status.success());
     assert!(!home.join("defaults/llvm").exists());
 }

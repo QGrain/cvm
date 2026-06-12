@@ -1,0 +1,74 @@
+# Troubleshooting
+
+## Linux glibc and musl
+
+cvm Linux release assets use musl targets:
+
+```text
+cvm-x86_64-unknown-linux-musl.tar.gz
+cvm-aarch64-unknown-linux-musl.tar.gz
+```
+
+This avoids requiring the target host to provide the same glibc version as the
+GitHub Actions runner that built the binary. If an older cvm binary reports a
+`GLIBC_x.y not found` error, reinstall a newer cvm release.
+
+## Proxy Settings
+
+cvm honors standard proxy environment variables for HTTP requests:
+
+```sh
+export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7890
+```
+
+Use the lowercase and uppercase variants if your environment requires both.
+`cvm ls-remote`, `cvm version`, and `cvm upgrade` read the remote index through
+this network path.
+
+## PATH Priority
+
+The installer writes `cvm` to `$CVM_HOME/bin/cvm` and loads `$CVM_HOME/cvm.sh`
+from your shell profile. The loader puts `$CVM_HOME/bin` and active toolchain
+`bin` directories before system compiler paths.
+
+Run:
+
+```sh
+cvm version
+cvm current
+cvm which llvm
+cvm which gcc
+```
+
+If system compilers are still selected, ensure the cvm profile snippet appears
+after other PATH setup in your shell profile.
+
+## Profile Not Loaded
+
+If `cvm use ...` prints shell code instead of switching the current shell, the
+shell loader is not loaded. Open a new shell or run:
+
+```sh
+export CVM_HOME="${CVM_HOME:-$HOME/.cvm}"
+. "$CVM_HOME/cvm.sh"
+```
+
+For one-off scripts, use:
+
+```sh
+eval "$(cvm use llvm 21)"
+```
+
+## Source Build Dependencies
+
+cvm builds LLVM and GCC from source. On Debian and Ubuntu systems the backend
+scripts bootstrap required packages with `sudo apt install`.
+
+If dependency installation fails:
+
+- Confirm the user can run `sudo`.
+- Confirm apt repositories are reachable through your proxy or mirror.
+- Re-run the failing `cvm install ... --dry-run` command to inspect the backend
+  script invocation.
+- Install missing build tools manually in locked-down containers.

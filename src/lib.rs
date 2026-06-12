@@ -53,6 +53,12 @@ impl Version {
             rc,
         })
     }
+
+    fn matches_prefix(&self, prefix: &VersionPrefix) -> bool {
+        self.major == prefix.major
+            && prefix.minor.is_none_or(|minor| self.minor == minor)
+            && prefix.patch.is_none_or(|patch| self.patch == patch)
+    }
 }
 
 impl fmt::Display for Version {
@@ -152,6 +158,38 @@ pub struct ToolSpec {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+struct VersionPrefix {
+    major: u32,
+    minor: Option<u32>,
+    patch: Option<u32>,
+}
+
+impl VersionPrefix {
+    fn parse(input: &str) -> Result<Self, String> {
+        if input.contains('-') {
+            return Err(format!(
+                "version prefix must be numeric dot components: {input}"
+            ));
+        }
+        let parts: Vec<&str> = input.split('.').collect();
+        if parts.is_empty() || parts.len() > 3 {
+            return Err(format!("version prefix must be X, X.Y, or X.Y.Z: {input}"));
+        }
+        Ok(Self {
+            major: parse_u32(parts[0], input)?,
+            minor: parts
+                .get(1)
+                .map(|value| parse_u32(value, input))
+                .transpose()?,
+            patch: parts
+                .get(2)
+                .map(|value| parse_u32(value, input))
+                .transpose()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RemoteVersion {
     pub version: Version,
     pub date: Option<String>,
@@ -196,6 +234,17 @@ pub fn parse_tool_spec(input: &str) -> Result<ToolSpec, String> {
     Ok(ToolSpec {
         tool: Tool::from_str(tool)?,
         version: Version::parse(version)?,
+    })
+}
+
+fn parse_tool_spec_request(input: &str) -> Result<ToolSpec, String> {
+    let (tool, version) = input
+        .split_once('@')
+        .ok_or_else(|| format!("tool spec must look like llvm@21.1.8 or gcc@15.1.0: {input}"))?;
+    let tool = Tool::from_str(tool)?;
+    Ok(ToolSpec {
+        tool,
+        version: resolve_requested_version(tool, Some(version))?,
     })
 }
 
@@ -314,6 +363,7 @@ pub fn run_cli_result(args: Vec<String>) -> Result<(), String> {
         "env" => cmd_env(&rest),
         "alias" => cmd_alias(&rest),
         "current" => cmd_current(&rest),
+        "which" => cmd_which(&rest),
         "uninstall" => cmd_uninstall(&rest),
         "upgrade" => cmd_upgrade(&rest),
         "init" => cmd_init(&rest),
@@ -338,16 +388,17 @@ fn cmd_version(args: &[String]) -> Result<(), String> {
         }
         Err(err) => println!("warning: failed to check remote index: {err}"),
     }
+    print_version_diagnostics();
     Ok(())
 }
 
 fn cmd_install(args: &[String]) -> Result<(), String> {
     if args.len() < 2 {
-        return Err("usage: cvm install <llvm|gcc> <version> [-jN|--jobs N] [--targets LIST] [--prefix DIR] [--dry-run]".into());
+        return Err("usage: cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--targets LIST] [--prefix DIR] [--dry-run]".into());
     }
 
     let tool = Tool::from_str(&args[0])?;
-    let version = Version::parse(&args[1])?;
+    let version = resolve_remote_or_exact_version(tool, &args[1])?;
     let mut options = InstallOptions::default();
     let mut idx = 2;
     while idx < args.len() {
@@ -422,21 +473,28 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_ls_remote(args: &[String]) -> Result<(), String> {
-    if args.len() > 1 {
-        return Err("usage: cvm ls-remote [llvm|gcc]".into());
+    if args.len() > 2 {
+        return Err("usage: cvm ls-remote [llvm|gcc] [prefix]".into());
     }
     let tools = if let Some(tool) = args.first() {
         vec![Tool::from_str(tool)?]
     } else {
         Tool::all().to_vec()
     };
+    let prefix = args
+        .get(1)
+        .map(|value| VersionPrefix::parse(value))
+        .transpose()?;
 
     for (idx, tool) in tools.iter().enumerate() {
         if idx > 0 {
             println!();
         }
         println!("{tool}:");
-        let releases = remote_versions(*tool)?;
+        let mut releases = remote_versions(*tool)?;
+        if let Some(prefix) = &prefix {
+            releases.retain(|release| release.version.matches_prefix(prefix));
+        }
         if releases.is_empty() {
             println!("  <none>");
         } else {
@@ -480,7 +538,7 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
 
 fn cmd_use(args: &[String]) -> Result<(), String> {
     if args.is_empty() {
-        return Err("usage: cvm use <llvm|gcc> [version]".into());
+        return Err("usage: cvm use <llvm|gcc> [version-or-prefix]".into());
     }
     let tool = Tool::from_str(&args[0])?;
     let version = resolve_requested_version(tool, args.get(1).map(String::as_str))?;
@@ -493,7 +551,8 @@ fn cmd_use(args: &[String]) -> Result<(), String> {
 fn cmd_env(args: &[String]) -> Result<(), String> {
     if args.is_empty() {
         return Err(
-            "usage: cvm env <llvm|gcc> [version] or cvm env <llvm@version|gcc@version>".into(),
+            "usage: cvm env <llvm|gcc> [version-or-prefix] or cvm env <llvm@version|gcc@version>"
+                .into(),
         );
     }
 
@@ -503,7 +562,7 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
     }
 
     let spec = if args[0].contains('@') {
-        parse_tool_spec(&args[0])?
+        parse_tool_spec_request(&args[0])?
     } else {
         let tool = Tool::from_str(&args[0])?;
         let version = resolve_requested_version(tool, args.get(1).map(String::as_str))?;
@@ -523,10 +582,10 @@ fn cmd_alias(args: &[String]) -> Result<(), String> {
     match args[0].as_str() {
         "default" => {
             if args.len() != 3 {
-                return Err("usage: cvm alias default <llvm|gcc> <version>".into());
+                return Err("usage: cvm alias default <llvm|gcc> <version-or-prefix>".into());
             }
             let tool = Tool::from_str(&args[1])?;
-            let version = Version::parse(&args[2])?;
+            let version = resolve_local_or_exact_version(tool, &args[2])?;
             let prefix = install_prefix(tool, &version)?;
             ensure_installed(tool, &version, &prefix)?;
             write_global_version(tool, &version)?;
@@ -555,12 +614,31 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_uninstall(args: &[String]) -> Result<(), String> {
-    if args.len() < 2 {
-        return Err("usage: cvm uninstall <llvm|gcc> <version>".into());
+fn cmd_which(args: &[String]) -> Result<(), String> {
+    if args.is_empty() || args.len() > 2 {
+        return Err("usage: cvm which <llvm|gcc> [version-or-prefix]".into());
     }
     let tool = Tool::from_str(&args[0])?;
-    let version = Version::parse(&args[1])?;
+    let version = resolve_requested_version(tool, args.get(1).map(String::as_str))?;
+    let prefix = install_prefix(tool, &version)?;
+    ensure_installed(tool, &version, &prefix)?;
+    let bin = prefix.join("bin");
+    println!("{tool} {version}:");
+    for name in which_binary_names(tool) {
+        let path = bin.join(name);
+        if path.exists() {
+            println!("  {name}: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn cmd_uninstall(args: &[String]) -> Result<(), String> {
+    if args.len() < 2 {
+        return Err("usage: cvm uninstall <llvm|gcc> <version-or-prefix>".into());
+    }
+    let tool = Tool::from_str(&args[0])?;
+    let version = resolve_local_or_exact_version(tool, &args[1])?;
     let prefix = install_prefix(tool, &version)?;
     if !prefix.exists() {
         return Err(format!(
@@ -650,11 +728,44 @@ fn list_aliases() -> Result<(), String> {
 
 fn resolve_requested_version(tool: Tool, explicit: Option<&str>) -> Result<Version, String> {
     if let Some(version) = explicit {
-        return Version::parse(version);
+        return resolve_local_or_exact_version(tool, version);
     }
     let version = read_global_version(tool)?
         .ok_or_else(|| format!("no default version configured for {tool}"))?;
     Version::parse(&version)
+}
+
+fn resolve_remote_or_exact_version(tool: Tool, input: &str) -> Result<Version, String> {
+    if let Ok(version) = Version::parse(input) {
+        return Ok(version);
+    }
+    let prefix = VersionPrefix::parse(input)?;
+    resolve_highest_matching_version(
+        remote_versions(tool)?
+            .into_iter()
+            .map(|entry| entry.version),
+        &prefix,
+    )
+    .ok_or_else(|| format!("no remote {tool} version matches prefix {input}"))
+}
+
+fn resolve_local_or_exact_version(tool: Tool, input: &str) -> Result<Version, String> {
+    if let Ok(version) = Version::parse(input) {
+        return Ok(version);
+    }
+    let prefix = VersionPrefix::parse(input)?;
+    resolve_highest_matching_version(installed_versions(tool)?, &prefix)
+        .ok_or_else(|| format!("no installed {tool} version matches prefix {input}"))
+}
+
+fn resolve_highest_matching_version<I>(versions: I, prefix: &VersionPrefix) -> Option<Version>
+where
+    I: IntoIterator<Item = Version>,
+{
+    versions
+        .into_iter()
+        .filter(|version| version.matches_prefix(prefix))
+        .max()
 }
 
 fn maybe_alias_default_after_install(
@@ -796,6 +907,85 @@ fn compatibility_note(tool: Tool) -> String {
         Tool::Llvm => format!(
             "{platform}; source builds support LLVM >= 9.0.1 and Debian/Ubuntu apt dependency bootstrap"
         ),
+    }
+}
+
+fn print_version_diagnostics() {
+    println!("diagnostics:");
+    let home = match cvm_home() {
+        Ok(home) => {
+            println!("  CVM_HOME: {}", home.display());
+            home
+        }
+        Err(err) => {
+            println!("  CVM_HOME: <unavailable: {err}>");
+            return;
+        }
+    };
+
+    match env::current_exe() {
+        Ok(path) => println!("  cvm binary: {}", path.display()),
+        Err(err) => println!("  cvm binary: <unknown: {err}>"),
+    }
+
+    let loader = home.join("cvm.sh");
+    println!(
+        "  cvm.sh: {}",
+        if loader.is_file() { "found" } else { "missing" }
+    );
+
+    let cvm_bin = home.join("bin");
+    println!(
+        "  PATH: {}",
+        if path_contains(&cvm_bin) {
+            "$CVM_HOME/bin found"
+        } else {
+            "$CVM_HOME/bin missing"
+        }
+    );
+
+    for tool in Tool::all() {
+        print_default_diagnostic(&home, tool);
+    }
+}
+
+fn print_default_diagnostic(home: &Path, tool: Tool) {
+    let label = format!("default {tool}");
+    match read_global_version(tool) {
+        Ok(Some(version)) => match Version::parse(&version) {
+            Ok(version) => {
+                let prefix = install_prefix_for_home(home, tool, &version);
+                let status = if prefix.join("bin").is_dir() {
+                    "installed"
+                } else {
+                    "missing"
+                };
+                println!("  {label}: {version} ({status})");
+            }
+            Err(err) => println!("  {label}: {version} (invalid: {err})"),
+        },
+        Ok(None) => println!("  {label}: <none>"),
+        Err(err) => println!("  {label}: <error: {err}>"),
+    }
+}
+
+fn path_contains(path: &Path) -> bool {
+    env::var_os("PATH")
+        .map(|paths| env::split_paths(&paths).any(|entry| entry == path))
+        .unwrap_or(false)
+}
+
+fn which_binary_names(tool: Tool) -> &'static [&'static str] {
+    match tool {
+        Tool::Llvm => &[
+            "clang",
+            "clang++",
+            "ld.lld",
+            "llvm-ar",
+            "llvm-nm",
+            "llvm-objcopy",
+        ],
+        Tool::Gcc => &["gcc", "g++", "gcov"],
     }
 }
 
@@ -1025,21 +1215,23 @@ fn print_help() {
         stdout,
         "cvm {CVM_VERSION} - compiler version manager\n\n\
          Usage:\n\
-           cvm install <llvm|gcc> <version> [-jN|--jobs N]\n\
-           cvm ls-remote [llvm|gcc]\n\
+           cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N]\n\
+           cvm ls-remote [llvm|gcc] [prefix]\n\
            cvm ls [llvm|gcc]\n\
-           cvm use <llvm|gcc> [version]\n\
-           cvm alias default <llvm|gcc> <version>\n\
+           cvm use <llvm|gcc> [version-or-prefix]\n\
+           cvm alias default <llvm|gcc> <version-or-prefix>\n\
            cvm current [llvm|gcc]\n\
-           cvm env <llvm|gcc> [version]\n\
-           cvm uninstall <llvm|gcc> <version>\n\
+           cvm env <llvm|gcc> [version-or-prefix]\n\
+           cvm which <llvm|gcc> [version-or-prefix]\n\
+           cvm uninstall <llvm|gcc> <version-or-prefix>\n\
            cvm upgrade [version] [--dry-run]\n\
            cvm init\n\
            cvm version\n\n\
          Examples:\n\
-           cvm install llvm 21.1.8 -j8\n\
-           cvm ls-remote llvm\n\
-           eval \"$(cvm use llvm 21.1.8)\"\n\
+           cvm install llvm 21 -j8\n\
+           cvm ls-remote llvm 21\n\
+           eval \"$(cvm use llvm 21)\"\n\
+           cvm which llvm\n\
            cvm alias default llvm 21.1.8\n\
            cvm upgrade --dry-run\n\
            eval \"$(cvm init)\"\n"

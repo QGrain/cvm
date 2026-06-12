@@ -13,7 +13,7 @@ untouched.
 Install a release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.2/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.3/install.sh | bash
 ```
 
 Install from a local checkout:
@@ -34,13 +34,14 @@ Running the installer again replaces only the cvm binary and regenerates
 ## Quick Start
 
 ```sh
-cvm install llvm 21.1.8 -j8
-cvm install gcc 15.1.0 -j8
+cvm install llvm 21 -j8
+cvm install gcc 15 -j8
 
-cvm ls-remote llvm
+cvm ls-remote llvm 21
 cvm ls
 
-cvm use llvm 21.1.8
+cvm use llvm 21
+cvm which llvm
 cvm alias default llvm 21.1.8
 
 cvm version
@@ -53,14 +54,15 @@ as the persistent default automatically.
 ## Commands
 
 ```text
-cvm install <llvm|gcc> <version> [-jN|--jobs N]
-cvm ls-remote [llvm|gcc]
+cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N]
+cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
-cvm use <llvm|gcc> [version]
-cvm alias default <llvm|gcc> <version>
+cvm use <llvm|gcc> [version-or-prefix]
+cvm alias default <llvm|gcc> <version-or-prefix>
 cvm current [llvm|gcc]
-cvm env <llvm|gcc> [version]
-cvm uninstall <llvm|gcc> <version>
+cvm env <llvm|gcc> [version-or-prefix]
+cvm which <llvm|gcc> [version-or-prefix]
+cvm uninstall <llvm|gcc> <version-or-prefix>
 cvm upgrade [version] [--dry-run]
 cvm init
 cvm version
@@ -70,13 +72,14 @@ In interactive shells that source `$CVM_HOME/cvm.sh`, `cvm use ...` updates the
 current shell like `nvm`. In scripts or one-off shells, use:
 
 ```sh
-eval "$(cvm use llvm 21.1.8)"
+eval "$(cvm use llvm 21)"
 ```
 
 ## Documentation
 
 - [Design notes](docs/design.md)
 - [Release process](docs/release.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Contribution guide](docs/contribution.md)
 
 ## Uninstalling
