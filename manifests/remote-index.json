@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-10T13:25:29Z",
+  "generated_at": "2026-06-15T09:45:27Z",
   "cvm": {
     "latest": "v0.0.3"
   },
@@ -10,6 +10,11 @@
         "version": "16.1.0",
         "date": "2026-04-30",
         "url": "https://ftp.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz"
+      },
+      {
+        "version": "15.3.0",
+        "date": "2026-06-12",
+        "url": "https://ftp.gnu.org/gnu/gcc/gcc-15.3.0/gcc-15.3.0.tar.xz"
       },
       {
         "version": "15.2.0",
