@@ -1,12 +1,8 @@
 <img src="assets/logos/cvm-logo-color.svg" alt="Compiler Version Manager" width="160">
-<br></br>
 
 <h1>Compiler Version Manager</h1>
 
-<img src="https://img.shields.io/badge/version-v0.0.4-orange.svg" alt="Release Version">
-<img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License">
-<img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status">
-<img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
+<img src="https://img.shields.io/badge/version-v0.0.4-orange.svg" alt="Release Version"> <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License"> <img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status"> <img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
 
 [[English]](README.md)
 
