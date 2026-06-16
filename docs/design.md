@@ -45,3 +45,26 @@ Compiler source builds are delegated to embedded backend scripts:
 
 At runtime, cvm materializes the selected backend under `$CVM_HOME/scripts` and
 invokes it with a versioned install prefix.
+
+## Build Profiles
+
+Build profiles are optional TOML files for advanced compiler source builds.
+The default profile is persistent: if
+`$CVM_HOME/profiles/build/<tool>/default.toml` exists, `cvm install` uses it
+unless an explicit `--profile PATH` is provided.
+
+Default profiles live under:
+
+```text
+$CVM_HOME/profiles/build/llvm/default.toml
+$CVM_HOME/profiles/build/gcc/default.toml
+```
+
+The data flow is:
+
+```text
+TOML profile -> Rust validation -> CVM_* environment variables -> backend script
+```
+
+This keeps shell scripts directly runnable while avoiding arbitrary argument
+passthrough. Generate a commented starting point with `cvm profile template`.

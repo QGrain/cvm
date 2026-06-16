@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
@@ -227,6 +228,32 @@ struct RemoteIndexEntry {
     url: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuildProfile {
+    llvm: Option<LlvmBuildProfile>,
+    gcc: Option<GccBuildProfile>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LlvmBuildProfile {
+    targets: Option<String>,
+    projects: Option<String>,
+    runtimes: Option<String>,
+    build_type: Option<String>,
+    cmake_defines: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GccBuildProfile {
+    languages: Option<String>,
+    multilib: Option<bool>,
+    bootstrap: Option<bool>,
+    configure_args: Option<Vec<String>>,
+}
+
 pub fn parse_tool_spec(input: &str) -> Result<ToolSpec, String> {
     let (tool, version) = input
         .split_once('@')
@@ -357,6 +384,7 @@ pub fn run_cli_result(args: Vec<String>) -> Result<(), String> {
         }
         "version" => cmd_version(&rest),
         "install" => cmd_install(&rest),
+        "profile" => cmd_profile(&rest),
         "ls-remote" => cmd_ls_remote(&rest),
         "ls" | "list" => cmd_list(&rest),
         "use" => cmd_use(&rest),
@@ -394,12 +422,13 @@ fn cmd_version(args: &[String]) -> Result<(), String> {
 
 fn cmd_install(args: &[String]) -> Result<(), String> {
     if args.len() < 2 {
-        return Err("usage: cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--targets LIST] [--prefix DIR] [--dry-run]".into());
+        return Err("usage: cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST] [--prefix DIR] [--dry-run]".into());
     }
 
     let tool = Tool::from_str(&args[0])?;
     let version = resolve_remote_or_exact_version(tool, &args[1])?;
     let mut options = InstallOptions::default();
+    let mut explicit_targets = false;
     let mut idx = 2;
     while idx < args.len() {
         match args[idx].as_str() {
@@ -423,6 +452,11 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
                     return Err("--targets is only supported for llvm installs".into());
                 }
                 options.targets = Some(targets);
+                explicit_targets = true;
+            }
+            "--profile" => {
+                idx += 1;
+                options.profile = Some(PathBuf::from(args.get(idx).ok_or("missing profile path")?));
             }
             "--prefix" => {
                 idx += 1;
@@ -433,6 +467,19 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
             other => return Err(format!("unknown install option: {other}")),
         }
         idx += 1;
+    }
+    if explicit_targets && options.profile.is_some() {
+        return Err("--profile cannot be combined with --targets".into());
+    }
+    let active_profile = match &options.profile {
+        Some(profile) => Some(profile.clone()),
+        None => {
+            let default = default_build_profile_path(tool)?;
+            default.exists().then_some(default)
+        }
+    };
+    if explicit_targets && active_profile.is_some() {
+        return Err("--targets cannot be combined with an active build profile".into());
     }
 
     let using_custom_prefix = options.prefix.is_some();
@@ -460,16 +507,155 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
     if options.force_configure {
         command_args.push("--force-configure".to_string());
     }
+    let profile_env = match &active_profile {
+        Some(profile) => build_profile_env(tool, profile)?,
+        None => Vec::new(),
+    };
 
     if options.dry_run {
+        if let Some(profile) = &active_profile {
+            println!("profile: {}", profile.display());
+        }
+        for (key, value) in &profile_env {
+            println!("env {key}={}", value.replace('\n', "\\n"));
+        }
         println!("bash {}", command_args.join(" "));
         return Ok(());
     }
 
     let mut command = Command::new("bash");
     command.args(command_args);
+    command.envs(profile_env);
     run_command(command)?;
     maybe_alias_default_after_install(tool, &version, using_custom_prefix)
+}
+
+fn cmd_profile(args: &[String]) -> Result<(), String> {
+    let usage = "usage: cvm profile <template|list> ...";
+    match args.first().map(String::as_str) {
+        Some("template") => cmd_profile_template(args),
+        Some("list") => cmd_profile_list(&args[1..]),
+        Some("-h") | Some("--help") => {
+            println!("{usage}");
+            println!("       cvm profile template <llvm|gcc> [PATH] [--force]");
+            println!("       cvm profile list");
+            Ok(())
+        }
+        _ => Err(usage.into()),
+    }
+}
+
+fn cmd_profile_template(args: &[String]) -> Result<(), String> {
+    if args.get(1).map(String::as_str) == Some("-h")
+        || args.get(1).map(String::as_str) == Some("--help")
+    {
+        println!("usage: cvm profile template <llvm|gcc> [PATH] [--force]");
+        return Ok(());
+    }
+    if args.len() < 2 {
+        return Err("usage: cvm profile template <llvm|gcc> [PATH] [--force]".into());
+    }
+    let tool = Tool::from_str(&args[1])?;
+    let mut output = None::<PathBuf>;
+    let mut force = false;
+    let mut idx = 2;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--force" => force = true,
+            "-h" | "--help" => {
+                println!("usage: cvm profile template <llvm|gcc> [PATH] [--force]");
+                return Ok(());
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("unknown profile template option: {other}"));
+            }
+            path => {
+                if output.is_some() {
+                    return Err("usage: cvm profile template <llvm|gcc> [PATH] [--force]".into());
+                }
+                output = Some(PathBuf::from(path));
+            }
+        }
+        idx += 1;
+    }
+
+    let template = profile_template(tool);
+    parse_build_profile(template)?;
+    let path = output.unwrap_or(default_build_profile_path(tool)?);
+    if path.exists() && !force {
+        return Err(format!(
+            "{} already exists; use --force to overwrite",
+            path.display()
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
+    }
+    fs::write(&path, template).map_err(|e| format!("failed to write {}: {e}", path.display()))?;
+    print!("{template}");
+    println!("\nprofile written to: {}", path.display());
+    if path == default_build_profile_path(tool)? {
+        println!(
+            "future `cvm install {tool} ...` commands will use this default profile unless --profile is specified"
+        );
+    } else {
+        println!(
+            "install with: cvm install {tool} <version> --profile {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+fn cmd_profile_list(args: &[String]) -> Result<(), String> {
+    if !args.is_empty() {
+        return Err("usage: cvm profile list".into());
+    }
+    let profiles = cvm_home()?.join("profiles");
+    if !profiles.exists() {
+        println!("no profiles found under {}", profiles.display());
+        return Ok(());
+    }
+
+    let mut entries = Vec::<(Tool, String, PathBuf)>::new();
+    for tool in Tool::all() {
+        let dir = profiles.join("build").join(tool.as_str());
+        let read_dir = match fs::read_dir(&dir) {
+            Ok(read_dir) => read_dir,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(format!("failed to read {}: {err}", dir.display())),
+        };
+        let mut tool_entries = Vec::new();
+        for entry in read_dir {
+            let entry = entry.map_err(|err| format!("failed to read {}: {err}", dir.display()))?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            tool_entries.push((name.to_string(), path));
+        }
+        tool_entries.sort_by(|left, right| left.0.cmp(&right.0));
+        entries.extend(
+            tool_entries
+                .into_iter()
+                .map(|(name, path)| (tool, name, path)),
+        );
+    }
+
+    if entries.is_empty() {
+        println!("no profiles found under {}", profiles.display());
+        return Ok(());
+    }
+
+    println!("build:");
+    for (tool, name, path) in entries {
+        println!("  {:<4} {:<8} {}", tool, name, path.display());
+    }
+    Ok(())
 }
 
 fn cmd_ls_remote(args: &[String]) -> Result<(), String> {
@@ -724,6 +910,119 @@ fn list_aliases() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn build_profile_env(tool: Tool, path: &Path) -> Result<Vec<(String, String)>, String> {
+    let body =
+        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    let profile = parse_build_profile(&body)?;
+    match tool {
+        Tool::Llvm => {
+            let llvm = profile.llvm.ok_or_else(|| {
+                format!(
+                    "profile {} does not contain an [llvm] section",
+                    path.display()
+                )
+            })?;
+            llvm_profile_env(llvm)
+        }
+        Tool::Gcc => {
+            let gcc = profile.gcc.ok_or_else(|| {
+                format!(
+                    "profile {} does not contain a [gcc] section",
+                    path.display()
+                )
+            })?;
+            gcc_profile_env(gcc)
+        }
+    }
+}
+
+fn parse_build_profile(input: &str) -> Result<BuildProfile, String> {
+    toml::from_str(input).map_err(|e| format!("failed to parse build profile: {e}"))
+}
+
+fn default_build_profile_path(tool: Tool) -> Result<PathBuf, String> {
+    Ok(cvm_home()?
+        .join("profiles")
+        .join("build")
+        .join(tool.as_str())
+        .join("default.toml"))
+}
+
+fn llvm_profile_env(profile: LlvmBuildProfile) -> Result<Vec<(String, String)>, String> {
+    let mut envs = Vec::new();
+    push_non_empty_env(&mut envs, "CVM_LLVM_TARGETS", profile.targets)?;
+    push_non_empty_env(&mut envs, "CVM_LLVM_PROJECTS", profile.projects)?;
+    push_non_empty_env(&mut envs, "CVM_LLVM_RUNTIMES", profile.runtimes)?;
+    push_non_empty_env(&mut envs, "CVM_LLVM_BUILD_TYPE", profile.build_type)?;
+    if let Some(defines) = profile.cmake_defines {
+        let mut entries = Vec::new();
+        for (key, value) in defines {
+            if key.trim().is_empty() {
+                return Err("llvm.cmake_defines contains an empty key".into());
+            }
+            reject_newlines("llvm.cmake_defines keys", &key)?;
+            reject_newlines("llvm.cmake_defines values", &value)?;
+            entries.push(format!("{key}={value}"));
+        }
+        if !entries.is_empty() {
+            envs.push(("CVM_LLVM_CMAKE_DEFINES".into(), entries.join("\n")));
+        }
+    }
+    Ok(envs)
+}
+
+fn gcc_profile_env(profile: GccBuildProfile) -> Result<Vec<(String, String)>, String> {
+    let mut envs = Vec::new();
+    push_non_empty_env(&mut envs, "CVM_GCC_LANGUAGES", profile.languages)?;
+    if let Some(multilib) = profile.multilib {
+        envs.push(("CVM_GCC_MULTILIB".into(), multilib.to_string()));
+    }
+    if let Some(bootstrap) = profile.bootstrap {
+        envs.push(("CVM_GCC_BOOTSTRAP".into(), bootstrap.to_string()));
+    }
+    if let Some(args) = profile.configure_args {
+        for arg in &args {
+            if arg.trim().is_empty() {
+                return Err("gcc.configure_args must not contain empty arguments".into());
+            }
+            reject_newlines("gcc.configure_args", arg)?;
+        }
+        if !args.is_empty() {
+            envs.push(("CVM_GCC_CONFIGURE_ARGS".into(), args.join("\n")));
+        }
+    }
+    Ok(envs)
+}
+
+fn push_non_empty_env(
+    envs: &mut Vec<(String, String)>,
+    key: &str,
+    value: Option<String>,
+) -> Result<(), String> {
+    if let Some(value) = value {
+        if value.trim().is_empty() {
+            return Err(format!("{key} must not be empty"));
+        }
+        reject_newlines(key, &value)?;
+        envs.push((key.into(), value));
+    }
+    Ok(())
+}
+
+fn reject_newlines(field: &str, value: &str) -> Result<(), String> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err(format!("{field} must not contain newlines"));
+    }
+    Ok(())
+}
+
+fn profile_template(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Llvm => LLVM_PROFILE_TEMPLATE,
+        Tool::Gcc => GCC_PROFILE_TEMPLATE,
+    }
 }
 
 fn resolve_requested_version(tool: Tool, explicit: Option<&str>) -> Result<Version, String> {
@@ -1215,7 +1514,9 @@ fn print_help() {
         stdout,
         "cvm {CVM_VERSION} - compiler version manager\n\n\
          Usage:\n\
-           cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N]\n\
+           cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST]\n\
+           cvm profile template <llvm|gcc> [PATH] [--force]\n\
+           cvm profile list\n\
            cvm ls-remote [llvm|gcc] [prefix]\n\
            cvm ls [llvm|gcc]\n\
            cvm use <llvm|gcc> [version-or-prefix]\n\
@@ -1229,6 +1530,9 @@ fn print_help() {
            cvm version\n\n\
          Examples:\n\
            cvm install llvm 21 -j8\n\
+           cvm profile template llvm\n\
+           cvm profile list\n\
+           cvm install llvm 21 --profile ./llvm-custom.toml\n\
            cvm ls-remote llvm 21\n\
            eval \"$(cvm use llvm 21)\"\n\
            cvm which llvm\n\
@@ -1242,7 +1546,71 @@ fn print_help() {
 struct InstallOptions {
     jobs: Option<String>,
     targets: Option<String>,
+    profile: Option<PathBuf>,
     prefix: Option<PathBuf>,
     force_configure: bool,
     dry_run: bool,
 }
+
+const LLVM_PROFILE_TEMPLATE: &str = r#"# cvm LLVM build profile
+#
+# This template mirrors cvm's default kernel-oriented LLVM build.
+# Generate it, edit only the fields you need, then install normally:
+#
+#   cvm install llvm 21
+#
+# The default LLVM build profile lives at:
+#
+#   $CVM_HOME/profiles/build/llvm/default.toml
+
+[llvm]
+
+# LLVM targets to build. X86 is enough for common x86 Linux kernel builds.
+# Add AArch64, ARM, RISCV, etc. when you need cross-kernel work.
+targets = "X86"
+
+# Keep clang and lld for Linux kernel builds. compiler-rt is useful for
+# sanitizer/runtime work.
+projects = "clang;lld;compiler-rt"
+
+# Runtime libraries used by the default cvm LLVM build.
+runtimes = "libcxx;libcxxabi;libunwind"
+
+# Release is the default. Debug builds are much larger and slower.
+build_type = "Release"
+
+# Extra -DKEY=VALUE definitions passed to CMake.
+[llvm.cmake_defines]
+# LLVM_ENABLE_ASSERTIONS = "ON"
+# LLVM_ENABLE_ZSTD = "ON"
+"#;
+
+const GCC_PROFILE_TEMPLATE: &str = r#"# cvm GCC build profile
+#
+# This template mirrors cvm's default kernel-oriented GCC build.
+# Generate it, edit only the fields you need, then install normally:
+#
+#   cvm install gcc 15
+#
+# The default GCC build profile lives at:
+#
+#   $CVM_HOME/profiles/build/gcc/default.toml
+
+[gcc]
+
+# GCC frontend languages. The default C/C++ set is enough for Linux kernel
+# builds and normal C/C++ development.
+languages = "c,c++"
+
+# false keeps the default --disable-multilib behavior.
+multilib = false
+
+# false keeps the default --disable-bootstrap behavior for faster builds.
+bootstrap = false
+
+# Extra configure arguments appended after cvm's defaults.
+configure_args = [
+  # "--enable-plugin",
+  # "--enable-lto",
+]
+"#;

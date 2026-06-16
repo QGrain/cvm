@@ -99,18 +99,114 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
 
     let version = run(&home, &["--version"]);
     assert!(version.status.success());
-    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.3");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.4");
 
     let help = run(&home, &["help"]);
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("cvm install <llvm|gcc> <version-or-prefix>"));
+    assert!(help.contains("cvm profile template <llvm|gcc>"));
     assert!(help.contains("cvm ls-remote [llvm|gcc] [prefix]"));
     assert!(help.contains("cvm which <llvm|gcc> [version-or-prefix]"));
     assert!(help.contains("cvm upgrade [version] [--dry-run]"));
     assert!(help.contains("cvm alias default <llvm|gcc> <version-or-prefix>"));
     assert!(!help.contains("--source"));
+    assert!(!help.contains("--minimal"));
+    assert!(!help.contains("NAME_OR_PATH"));
+    assert!(!help.contains("build-profiles"));
     assert!(!help.contains("verify kernel"));
+}
+
+#[test]
+fn profile_template_writes_default_file_and_prints_content_and_hint() {
+    let home = cvm_home("profile-template");
+    let llvm = run(&home, &["profile", "template", "llvm"]);
+    assert!(llvm.status.success());
+    let llvm_stdout = String::from_utf8_lossy(&llvm.stdout);
+    assert!(llvm_stdout.contains("[llvm]"));
+    assert!(llvm_stdout.contains("LLVM_ENABLE_ASSERTIONS"));
+    assert!(llvm_stdout.contains("profile written to:"));
+    assert!(llvm_stdout.contains("profiles/build/llvm/default.toml"));
+    assert!(llvm_stdout.contains("future `cvm install llvm ...` commands will use this default profile unless --profile is specified"));
+
+    let default_path = home.join("profiles/build/llvm/default.toml");
+    assert!(default_path.exists());
+    assert!(fs::read_to_string(&default_path)
+        .unwrap()
+        .contains("targets = \"X86\""));
+
+    let reject = run(&home, &["profile", "template", "llvm"]);
+    assert!(!reject.status.success());
+    assert!(String::from_utf8_lossy(&reject.stderr).contains("already exists"));
+
+    let force = run(&home, &["profile", "template", "llvm", "--force"]);
+    assert!(force.status.success());
+    assert!(fs::read_to_string(default_path).unwrap().contains("[llvm]"));
+}
+
+#[test]
+fn profile_template_can_write_explicit_path_without_minimal_or_output() {
+    let home = cvm_home("profile-template-path");
+    let output_path = home.join("profiles/build/gcc/custom.toml");
+
+    let gcc = run(
+        &home,
+        &["profile", "template", "gcc", output_path.to_str().unwrap()],
+    );
+    assert!(gcc.status.success());
+    let gcc_stdout = String::from_utf8_lossy(&gcc.stdout);
+    assert!(gcc_stdout.contains("[gcc]"));
+    assert!(gcc_stdout.contains("profile written to:"));
+    assert!(gcc_stdout.contains("install with: cvm install gcc <version> --profile"));
+    assert!(output_path.exists());
+
+    let minimal = run(&home, &["profile", "template", "gcc", "--minimal"]);
+    assert!(!minimal.status.success());
+    assert!(String::from_utf8_lossy(&minimal.stderr).contains("unknown profile template option"));
+
+    let output = run(
+        &home,
+        &["profile", "template", "gcc", "--output", "/tmp/gcc.toml"],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown profile template option"));
+}
+
+#[test]
+fn profile_list_prints_existing_build_profiles() {
+    let home = cvm_home("profile-list");
+    let llvm_default = home.join("profiles/build/llvm/default.toml");
+    let gcc_custom = home.join("profiles/build/gcc/custom.toml");
+    fs::create_dir_all(llvm_default.parent().unwrap()).unwrap();
+    fs::create_dir_all(gcc_custom.parent().unwrap()).unwrap();
+    fs::write(&llvm_default, "[llvm]\ntargets = \"X86\"\n").unwrap();
+    fs::write(&gcc_custom, "[gcc]\nlanguages = \"c,c++\"\n").unwrap();
+
+    let output = run(&home, &["profile", "list"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("build:"));
+    assert!(stdout.contains("llvm"));
+    assert!(stdout.contains("default"));
+    assert!(stdout.contains(&llvm_default.display().to_string()));
+    assert!(stdout.contains("gcc"));
+    assert!(stdout.contains("custom"));
+    assert!(stdout.contains(&gcc_custom.display().to_string()));
+}
+
+#[test]
+fn profile_list_prints_empty_state_when_no_profiles_exist() {
+    let home = cvm_home("profile-list-empty");
+
+    let output = run(&home, &["profile", "list"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&format!(
+        "no profiles found under {}",
+        home.join("profiles").display()
+    )));
 }
 
 #[test]
@@ -158,6 +254,172 @@ fn install_dry_run_resolves_remote_version_prefix() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("21.1.8"));
     assert!(!stdout.contains("21.1.0 --prefix"));
+}
+
+#[test]
+fn install_dry_run_uses_default_llvm_profile_when_present() {
+    let home = cvm_home("install-llvm-profile");
+    let profile = home.join("profiles/build/llvm/default.toml");
+    fs::create_dir_all(profile.parent().unwrap()).unwrap();
+    fs::write(
+        &profile,
+        r#"[llvm]
+targets = "X86;AArch64"
+projects = "clang;lld;compiler-rt"
+runtimes = "libcxx;libcxxabi;libunwind"
+build_type = "Release"
+
+[llvm.cmake_defines]
+LLVM_ENABLE_ASSERTIONS = "ON"
+"#,
+    )
+    .unwrap();
+
+    let output = run(&home, &["install", "llvm", "21.1.8", "--dry-run"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("profile:"));
+    assert!(stdout.contains("profiles/build/llvm/default.toml"));
+    assert!(stdout.contains("env CVM_LLVM_TARGETS=X86;AArch64"));
+    assert!(stdout.contains("env CVM_LLVM_CMAKE_DEFINES=LLVM_ENABLE_ASSERTIONS=ON"));
+}
+
+#[test]
+fn install_profile_value_is_a_path_not_a_named_profile() {
+    let home = cvm_home("install-profile-path-only");
+    let old_named_profile = home.join("build-profiles/llvm/full.toml");
+    fs::create_dir_all(old_named_profile.parent().unwrap()).unwrap();
+    fs::write(
+        &old_named_profile,
+        r#"[llvm]
+targets = "X86"
+"#,
+    )
+    .unwrap();
+
+    let output = run(
+        &home,
+        &[
+            "install",
+            "llvm",
+            "21.1.8",
+            "--profile",
+            "full",
+            "--dry-run",
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("failed to read full"));
+}
+
+#[test]
+fn install_dry_run_uses_explicit_gcc_profile_path() {
+    let home = cvm_home("install-gcc-profile");
+    let profile = home.join("gcc-custom.toml");
+    fs::write(
+        &profile,
+        r#"[gcc]
+languages = "c,c++"
+multilib = true
+bootstrap = true
+configure_args = ["--enable-plugin", "--enable-lto"]
+"#,
+    )
+    .unwrap();
+
+    let output = run(
+        &home,
+        &[
+            "install",
+            "gcc",
+            "15.1.0",
+            "--profile",
+            profile.to_str().unwrap(),
+            "--dry-run",
+        ],
+    );
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("env CVM_GCC_MULTILIB=true"));
+    assert!(stdout.contains("env CVM_GCC_BOOTSTRAP=true"));
+    assert!(stdout.contains("env CVM_GCC_CONFIGURE_ARGS=--enable-plugin\\n--enable-lto"));
+}
+
+#[test]
+fn install_rejects_profile_values_with_newlines() {
+    let home = cvm_home("install-profile-newlines");
+    let profile = home.join("gcc-newline.toml");
+    fs::write(
+        &profile,
+        r#"[gcc]
+languages = "c,c++"
+configure_args = ["--enable-plugin\n--enable-lto"]
+"#,
+    )
+    .unwrap();
+
+    let output = run(
+        &home,
+        &[
+            "install",
+            "gcc",
+            "15.1.0",
+            "--profile",
+            profile.to_str().unwrap(),
+            "--dry-run",
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("must not contain newlines"));
+}
+
+#[test]
+fn install_rejects_profile_with_targets() {
+    let home = cvm_home("install-profile-targets");
+    let output = run(
+        &home,
+        &[
+            "install",
+            "llvm",
+            "21.1.8",
+            "--profile",
+            "full",
+            "--targets",
+            "X86;AArch64",
+            "--dry-run",
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--profile cannot be combined"));
+
+    let default_profile = home.join("profiles/build/llvm/default.toml");
+    fs::create_dir_all(default_profile.parent().unwrap()).unwrap();
+    fs::write(
+        &default_profile,
+        r#"[llvm]
+targets = "X86"
+"#,
+    )
+    .unwrap();
+    let output = run(
+        &home,
+        &[
+            "install",
+            "llvm",
+            "21.1.8",
+            "--targets",
+            "X86;AArch64",
+            "--dry-run",
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("active build profile"));
 }
 
 #[test]
@@ -403,7 +665,7 @@ fn version_checks_latest_release_without_failing_on_network_success() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.4"},
+  "cvm": {"latest": "v0.0.5"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -412,8 +674,8 @@ fn version_checks_latest_release_without_failing_on_network_success() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cvm 0.0.3"));
-    assert!(stdout.contains("new version available: v0.0.4"));
+    assert!(stdout.contains("cvm 0.0.4"));
+    assert!(stdout.contains("new version available: v0.0.5"));
     assert!(stdout.contains("cvm upgrade"));
     assert!(stdout.contains("diagnostics:"));
     assert!(stdout.contains("CVM_HOME:"));
@@ -430,7 +692,7 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.4"},
+  "cvm": {"latest": "v0.0.5"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -443,9 +705,9 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("upgrade: v0.0.4"));
+    assert!(stdout.contains("upgrade: v0.0.5"));
     assert!(stdout
-        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.0.4/install.sh"));
+        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.0.5/install.sh"));
 }
 
 #[test]

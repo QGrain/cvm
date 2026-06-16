@@ -40,6 +40,35 @@ python3 -m json.tool manifests/remote-index.json
 - For release index changes, let the synchronization workflow open the PR when
   possible.
 
+For small releases, a single release-focused commit is acceptable:
+
+```text
+v0.0.X: short release-focused summary
+```
+
+When a release contains multiple logical changes, split commits by concern.
+Keep pure version metadata in a dedicated bump commit:
+
+```text
+bump: prepare v0.0.X release metadata
+```
+
+That commit may include `Cargo.toml`, `Cargo.lock`, `install.sh`, README
+version badges or install examples, and `manifests/remote-index.json`.
+
+Use module-style prefixes for feature commits:
+
+```text
+profiles: add compiler build profile support
+install: pass build profile environment to backend scripts
+docs: document build profiles
+logos: add cvm logo assets
+agents: add project instructions for coding agents
+```
+
+Avoid mixing unrelated feature, documentation, logo, workflow, and release bump
+changes in the same commit when they can be reviewed independently.
+
 ## CI Expectations
 
 PRs should pass formatting, tests, clippy, shell syntax checks, Python syntax

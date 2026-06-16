@@ -14,6 +14,13 @@ Options:
       --force-configure     Remove an existing build directory before CMake
   -h, --help                Show this help
 
+Environment overrides used by cvm build profiles:
+  CVM_LLVM_TARGETS           Override LLVM targets
+  CVM_LLVM_PROJECTS          Override enabled LLVM projects
+  CVM_LLVM_RUNTIMES          Override enabled LLVM runtimes
+  CVM_LLVM_BUILD_TYPE        Override CMake build type
+  CVM_LLVM_CMAKE_DEFINES     Newline-separated KEY=VALUE CMake definitions
+
 Examples:
   ./build_llvm-project.sh 21.1.8
       Build LLVM 21.1.8 with default X86 kernel-oriented tools.
@@ -71,10 +78,10 @@ llvm_url() {
 
 jobs=""
 prefix=""
-targets="X86"
-projects="clang;lld;compiler-rt"
-runtimes="libcxx;libcxxabi;libunwind"
-build_type="Release"
+targets="${CVM_LLVM_TARGETS:-X86}"
+projects="${CVM_LLVM_PROJECTS:-clang;lld;compiler-rt}"
+runtimes="${CVM_LLVM_RUNTIMES:-libcxx;libcxxabi;libunwind}"
+build_type="${CVM_LLVM_BUILD_TYPE:-Release}"
 force_configure=0
 version=""
 
@@ -166,6 +173,13 @@ cmake_args=(
 	-DCMAKE_INSTALL_PREFIX="${prefix}"
 )
 cmake_args+=(-DLLVM_ENABLE_RUNTIMES="${runtimes}")
+if [[ -n ${CVM_LLVM_CMAKE_DEFINES:-} ]]; then
+	while IFS= read -r define; do
+		[[ -n $define ]] || continue
+		[[ $define == *=* ]] || die "invalid CVM_LLVM_CMAKE_DEFINES entry: $define"
+		cmake_args+=("-D${define}")
+	done <<<"$CVM_LLVM_CMAKE_DEFINES"
+fi
 
 cmake -S "${src_dir}/llvm" -B "$build_dir" "${cmake_args[@]}"
 ninja -C "$build_dir" -j"$jobs"

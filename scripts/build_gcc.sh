@@ -13,6 +13,12 @@ Options:
       --force-configure     Remove an existing build directory before configure
   -h, --help                Show this help
 
+Environment overrides used by cvm build profiles:
+  CVM_GCC_LANGUAGES          Configure languages (default: c,c++)
+  CVM_GCC_MULTILIB           true enables multilib, false disables it
+  CVM_GCC_BOOTSTRAP          true enables bootstrap, false disables it
+  CVM_GCC_CONFIGURE_ARGS     Newline-separated extra configure arguments
+
 Examples:
   ./build_gcc.sh 15.1.0
       Build GCC 15.1.0 with default kernel-oriented C/C++ support.
@@ -96,6 +102,12 @@ if [[ -z $jobs ]]; then
 	jobs=$((nproc_value / 2))
 	((jobs >= 1)) || jobs=1
 fi
+gcc_languages="${CVM_GCC_LANGUAGES:-c,c++}"
+gcc_multilib="${CVM_GCC_MULTILIB:-false}"
+gcc_bootstrap="${CVM_GCC_BOOTSTRAP:-false}"
+[[ -n $gcc_languages ]] || die "CVM_GCC_LANGUAGES must not be empty"
+[[ $gcc_multilib == "true" || $gcc_multilib == "false" ]] || die "CVM_GCC_MULTILIB must be true or false"
+[[ $gcc_bootstrap == "true" || $gcc_bootstrap == "false" ]] || die "CVM_GCC_BOOTSTRAP must be true or false"
 
 sudo apt update
 sudo apt install -y build-essential flex bison texinfo wget xz-utils
@@ -128,11 +140,23 @@ mkdir -p "$build_dir" "$prefix"
 
 (
 	cd "$build_dir"
-	"$configure_script" \
-		--prefix="$prefix" \
-		--enable-languages=c,c++ \
-		--disable-multilib \
-		--disable-bootstrap
+	configure_args=(
+		"--prefix=$prefix"
+		"--enable-languages=$gcc_languages"
+	)
+	if [[ $gcc_multilib == "false" ]]; then
+		configure_args+=(--disable-multilib)
+	fi
+	if [[ $gcc_bootstrap == "false" ]]; then
+		configure_args+=(--disable-bootstrap)
+	fi
+	if [[ -n ${CVM_GCC_CONFIGURE_ARGS:-} ]]; then
+		while IFS= read -r arg; do
+			[[ -n $arg ]] || continue
+			configure_args+=("$arg")
+		done <<<"$CVM_GCC_CONFIGURE_ARGS"
+	fi
+	"$configure_script" "${configure_args[@]}"
 	make -j"$jobs"
 	make install
 )
