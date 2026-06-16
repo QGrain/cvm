@@ -1,6 +1,14 @@
-# cvm
+<img src="assets/logos/cvm-logo-color.svg" alt="Compiler Version Manager" width="160">
+<br></br>
 
-[English](README.md)
+<h1>Compiler Version Manager</h1>
+
+<img src="https://img.shields.io/badge/version-v0.0.4-orange.svg" alt="Release Version">
+<img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License">
+<img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status">
+<img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
+
+[[English]](README.md)
 
 `cvm` 是一个面向 LLVM 和 GCC 的用户级编译器版本管理工具。
 
@@ -11,7 +19,7 @@
 安装指定 release：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.3/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.4/install.sh | bash
 ```
 
 从本地 checkout 安装：
@@ -41,6 +49,9 @@ cvm alias default llvm 21.1.8
 
 cvm version
 cvm upgrade --dry-run
+
+cvm profile template llvm
+cvm install llvm 21
 ```
 
 当某个编译器类别第一次安装受 cvm 管理的版本时，cvm 会自动把它设置为持久默认版本。
@@ -48,7 +59,9 @@ cvm upgrade --dry-run
 ## 命令
 
 ```text
-cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N]
+cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST]
+cvm profile template <llvm|gcc> [PATH] [--force]
+cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
 cvm use <llvm|gcc> [version-or-prefix]
@@ -71,6 +84,7 @@ eval "$(cvm use llvm 21)"
 ## 文档
 
 - [设计说明](docs/design.md)
+- [构建配置](docs/build-profiles.md)
 - [发布流程](docs/release.md)
 - [故障排查](docs/troubleshooting.md)
 - [贡献指南](docs/contribution.md)

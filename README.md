@@ -1,6 +1,14 @@
-# cvm
+<img src="assets/logos/cvm-logo-color.svg" alt="Compiler Version Manager" width="160">
+<br></br>
 
-[中文](README_CN.md)
+<h1>Compiler Version Manager</h1>
+
+<img src="https://img.shields.io/badge/version-v0.0.4-orange.svg" alt="Release Version">
+<img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License">
+<img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status">
+<img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
+
+[[中文]](README_CN.md)
 
 `cvm` is a per-user compiler version manager for LLVM and GCC.
 
@@ -13,7 +21,7 @@ untouched.
 Install a release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.3/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.4/install.sh | bash
 ```
 
 Install from a local checkout:
@@ -46,6 +54,9 @@ cvm alias default llvm 21.1.8
 
 cvm version
 cvm upgrade --dry-run
+
+cvm profile template llvm
+cvm install llvm 21
 ```
 
 When the first managed version of a compiler family is installed, cvm sets it
@@ -54,7 +65,9 @@ as the persistent default automatically.
 ## Commands
 
 ```text
-cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N]
+cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST]
+cvm profile template <llvm|gcc> [PATH] [--force]
+cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
 cvm use <llvm|gcc> [version-or-prefix]
@@ -78,6 +91,7 @@ eval "$(cvm use llvm 21)"
 ## Documentation
 
 - [Design notes](docs/design.md)
+- [Build profiles](docs/build-profiles.md)
 - [Release process](docs/release.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Contribution guide](docs/contribution.md)

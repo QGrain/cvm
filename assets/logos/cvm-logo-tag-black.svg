@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 260" role="img" aria-labelledby="title desc">
+  <title id="title">cvm tag logo black</title>
+  <desc id="desc">Black angular cvm wordmark with fragmented edges.</desc>
+  <rect width="860" height="260" fill="none"/>
+  <g transform="translate(76 10) scale(1.08)" fill="#111111">
+    <path d="M162 33H72L38 67v106l34 34h90v-43H91l-11-11V87l11-11h71z"/>
+    <path d="M192 33h49l50 120L341 33h49l-77 174h-44z"/>
+    <path d="M424 207V33h46l50 82 50-82h46v174h-43V101l-38 65h-30l-38-65v106z"/>
+    <polygon points="75 33 106 33 91 53 54 53"/>
+    <polygon points="142 164 162 164 162 190 134 181"/>
+    <polygon points="258 33 281 33 292 58 270 58"/>
+    <polygon points="318 153 341 98 355 129 323 207"/>
+    <polygon points="468 33 493 75 471 75"/>
+    <polygon points="573 33 616 33 594 59 573 59"/>
+    <polygon points="24 54 43 44 35 65"/>
+    <polygon points="54 211 75 216 62 228"/>
+    <polygon points="166 71 189 59 179 84"/>
+    <polygon points="223 12 242 20 224 31"/>
+    <polygon points="386 36 411 28 399 54"/>
+    <polygon points="622 94 650 83 638 111"/>
+    <polygon points="626 194 651 205 626 219"/>
+  </g>
+</svg>
