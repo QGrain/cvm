@@ -167,9 +167,14 @@ fn release_workflow_assets_match_installer_names() {
     assert!(workflow.contains("ref: ${{ env.RELEASE_TAG }}"));
     assert!(release_docs.contains("backfill"));
     assert!(release_docs.contains("v0.0.1"));
+    assert!(release_docs.contains("Verifying Packages"));
+    assert!(release_docs.contains("gpg --verify <asset>.tar.gz.sig <asset>.tar.gz"));
     assert!(contribution.contains("cargo clippy --all-targets -- -D warnings"));
     assert!(contribution.contains("Commit and PR Guidelines"));
     assert!(contribution.contains("Keep unrelated changes in separate commits"));
+    assert!(contribution.contains("bump: prepare v0.0.X release"));
+    assert!(contribution.contains("Use the GitHub release title as the tag only"));
+    assert!(contribution.contains("Verifying Packages"));
     assert!(contribution.contains("module-style prefixes"));
     assert!(build_profiles.contains("cvm profile template llvm"));
     assert!(build_profiles.contains("cvm profile list"));

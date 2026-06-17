@@ -31,6 +31,9 @@ to `$HOME/.cvm`.
 Primary user commands include:
 
 - `cvm install <llvm|gcc> <version-or-prefix>`
+- `cvm cache dir`
+- `cvm cache list`
+- `cvm cache prune [--older-than 14d]`
 - `cvm use <llvm|gcc> [version-or-prefix]`
 - `cvm env <llvm|gcc> [version-or-prefix]`
 - `cvm alias default <llvm|gcc> <version-or-prefix>`
@@ -59,6 +62,10 @@ with conservative defaults:
   explicit `--profile PATH`, and documented environment contracts, not arbitrary
   `--` passthrough.
 
+`cvm install` caches source archives under
+`$CVM_HOME/cache/sources/<tool>/<version>/` and passes the cached archive to the
+backend with `--archive`. Keep direct script execution working without cvm.
+
 ## Testing
 
 Before submitting changes, run:
@@ -86,3 +93,7 @@ versions, or incidental README wording unless those are deliberate contracts.
   `docs/`.
 - Do not add network dependencies to ordinary compiler switching paths.
 - Preserve installed toolchains and user defaults during cvm upgrades.
+- Keep release titles as the tag only, such as `v0.0.X`.
+- Use `bump: prepare v0.0.X release` for the final release metadata commit.
+- Release notes that include signed assets must contain a `Verifying Packages`
+  section with `gpg --verify <asset>.sig <asset>` guidance.

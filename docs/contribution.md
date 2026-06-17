@@ -50,7 +50,7 @@ When a release contains multiple logical changes, split commits by concern.
 Keep pure version metadata in a dedicated bump commit:
 
 ```text
-bump: prepare v0.0.X release metadata
+bump: prepare v0.0.X release
 ```
 
 That commit may include `Cargo.toml`, `Cargo.lock`, `install.sh`, README
@@ -68,6 +68,32 @@ agents: add project instructions for coding agents
 
 Avoid mixing unrelated feature, documentation, logo, workflow, and release bump
 changes in the same commit when they can be reviewed independently.
+
+## Release Notes
+
+Use the GitHub release title as the tag only:
+
+```text
+v0.0.X
+```
+
+Put the release theme in the annotated tag message and release note body, not
+in the GitHub release title:
+
+```sh
+git tag -a v0.0.X -m "v0.0.X: short release theme"
+```
+
+Release notes should stay concise and include:
+
+- `What's Changed`
+- `Documentation`, when user-facing docs changed
+- `Verification`, listing local checks that passed
+- `Verifying Packages`, when release assets have `.sig` files
+
+The `Verifying Packages` section should show users how to download the cvm
+release signing key, import it with `gpg`, download the matching asset and
+`.sig`, and run `gpg --verify <asset>.sig <asset>`.
 
 ## CI Expectations
 

@@ -24,6 +24,9 @@ The same workflow can be run manually with `workflow_dispatch` to backfill
 assets for an existing tag such as `v0.0.1`. Provide the tag input, and the
 workflow will check out that tag and upload assets to the matching release.
 
+When signed assets are available, each archive should have a matching `.sig`
+asset with the same name plus `.sig`.
+
 ## Installer Behavior
 
 `install.sh` first tries to download the matching binary asset for the selected
@@ -48,9 +51,42 @@ python3 -m py_compile tools/update_remote_index.py
 python3 -m json.tool manifests/remote-index.json
 ```
 
-Then tag and push:
+Then create an annotated tag and push it:
 
 ```sh
-git tag vX.Y.Z
+git tag -a vX.Y.Z -m "vX.Y.Z: short release theme"
 git push origin vX.Y.Z
 ```
+
+Use the GitHub release title as the tag only, for example `v0.0.5`. Put the
+release theme and details in the release note body.
+
+## Release Note Template
+
+````markdown
+## What's Changed
+
+- ...
+
+## Documentation
+
+- ...
+
+## Verification
+
+- `cargo fmt --check`
+- `cargo test`
+- `cargo clippy --all-targets -- -D warnings`
+
+## Verifying Packages
+
+Download the cvm release signing key, import it, then verify the asset:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/QGrain/cvm/main/docs/keys/cvm-release-signing-key.asc
+gpg --import cvm-release-signing-key.asc
+curl -fsSLO https://github.com/QGrain/cvm/releases/download/vX.Y.Z/<asset>.tar.gz
+curl -fsSLO https://github.com/QGrain/cvm/releases/download/vX.Y.Z/<asset>.tar.gz.sig
+gpg --verify <asset>.tar.gz.sig <asset>.tar.gz
+```
+````
