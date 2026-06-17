@@ -34,11 +34,13 @@ fn docs_use_qgrain_repository_and_initial_version() {
     assert!(!readme.contains("## Release Assets"));
     assert!(readme.contains("docs/design.md"));
     assert!(readme.contains("docs/build-profiles.md"));
+    assert!(readme.contains("docs/cache.md"));
     assert!(readme.contains("docs/release.md"));
     assert!(readme.contains("docs/troubleshooting.md"));
     assert!(readme.contains("docs/contribution.md"));
     assert!(readme_cn.contains("docs/design.md"));
     assert!(readme_cn.contains("docs/build-profiles.md"));
+    assert!(readme_cn.contains("docs/cache.md"));
     assert!(readme_cn.contains("docs/release.md"));
     assert!(readme_cn.contains("docs/troubleshooting.md"));
     assert!(readme_cn.contains("docs/contribution.md"));
@@ -144,6 +146,7 @@ fn release_workflow_assets_match_installer_names() {
     let release_docs = fs::read_to_string("docs/release.md").unwrap();
     let contribution = fs::read_to_string("docs/contribution.md").unwrap();
     let build_profiles = fs::read_to_string("docs/build-profiles.md").unwrap();
+    let cache = fs::read_to_string("docs/cache.md").unwrap();
 
     for target in [
         "x86_64-unknown-linux-musl",
@@ -184,4 +187,7 @@ fn release_workflow_assets_match_installer_names() {
     assert!(!build_profiles.contains("--minimal"));
     assert!(!build_profiles.contains("NAME_OR_PATH"));
     assert!(!build_profiles.contains("build-profiles"));
+    assert!(cache.contains("cvm cache list"));
+    assert!(cache.contains("$CVM_HOME/cache/sources"));
+    assert!(cache.contains("14 days"));
 }

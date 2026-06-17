@@ -20,6 +20,7 @@ const DEFAULT_REMOTE_INDEX: &str = include_str!("../manifests/remote-index.json"
 const CVM_REPO: &str = "QGrain/cvm";
 const DEFAULT_REMOTE_INDEX_URL: &str =
     "https://raw.githubusercontent.com/QGrain/cvm/main/manifests/remote-index.json";
+const DEFAULT_CACHE_TTL_SECS: u64 = 14 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Version {
@@ -195,6 +196,11 @@ pub struct RemoteVersion {
     pub version: Version,
     pub date: Option<String>,
     pub url: String,
+}
+
+struct InstallTarget {
+    version: Version,
+    source_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -384,6 +390,7 @@ pub fn run_cli_result(args: Vec<String>) -> Result<(), String> {
         }
         "version" => cmd_version(&rest),
         "install" => cmd_install(&rest),
+        "cache" => cmd_cache(&rest),
         "profile" => cmd_profile(&rest),
         "ls-remote" => cmd_ls_remote(&rest),
         "ls" | "list" => cmd_list(&rest),
@@ -426,7 +433,8 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
     }
 
     let tool = Tool::from_str(&args[0])?;
-    let version = resolve_remote_or_exact_version(tool, &args[1])?;
+    let target = resolve_remote_or_exact_install_target(tool, &args[1])?;
+    let version = target.version;
     let mut options = InstallOptions::default();
     let mut explicit_targets = false;
     let mut idx = 2;
@@ -523,11 +531,68 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
+    prune_cache_older_than(DEFAULT_CACHE_TTL_SECS, true)?;
+    let archive = ensure_cached_source_archive(tool, &version, &target.source_url)?;
+    command_args.push("--archive".to_string());
+    command_args.push(archive.display().to_string());
+
     let mut command = Command::new("bash");
     command.args(command_args);
     command.envs(profile_env);
     run_command(command)?;
     maybe_alias_default_after_install(tool, &version, using_custom_prefix)
+}
+
+fn cmd_cache(args: &[String]) -> Result<(), String> {
+    let usage = "usage: cvm cache <dir|list|prune>";
+    match args.first().map(String::as_str) {
+        Some("dir") => {
+            if args.len() != 1 {
+                return Err("usage: cvm cache dir".into());
+            }
+            println!("{}", cache_root()?.display());
+            Ok(())
+        }
+        Some("list") => {
+            if args.len() != 1 {
+                return Err("usage: cvm cache list".into());
+            }
+            list_cache()
+        }
+        Some("prune") => cmd_cache_prune(&args[1..]),
+        Some("-h") | Some("--help") => {
+            println!("{usage}");
+            println!("       cvm cache dir");
+            println!("       cvm cache list");
+            println!("       cvm cache prune [--older-than 14d]");
+            Ok(())
+        }
+        _ => Err(usage.into()),
+    }
+}
+
+fn cmd_cache_prune(args: &[String]) -> Result<(), String> {
+    let mut older_than = DEFAULT_CACHE_TTL_SECS;
+    let mut idx = 0;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--older-than" => {
+                idx += 1;
+                older_than = parse_duration_arg(args.get(idx).ok_or("missing duration value")?)?;
+            }
+            "-h" | "--help" => {
+                println!("usage: cvm cache prune [--older-than 14d]");
+                return Ok(());
+            }
+            other => return Err(format!("unknown cache prune option: {other}")),
+        }
+        idx += 1;
+    }
+    let pruned = prune_cache_older_than(older_than, true)?;
+    if pruned == 0 {
+        println!("cache: nothing to prune");
+    }
+    Ok(())
 }
 
 fn cmd_profile(args: &[String]) -> Result<(), String> {
@@ -1025,6 +1090,29 @@ fn profile_template(tool: Tool) -> &'static str {
     }
 }
 
+fn resolve_remote_or_exact_install_target(
+    tool: Tool,
+    input: &str,
+) -> Result<InstallTarget, String> {
+    if let Ok(version) = Version::parse(input) {
+        let source_url = default_source_url(tool, &version)?;
+        return Ok(InstallTarget {
+            version,
+            source_url,
+        });
+    }
+    let prefix = VersionPrefix::parse(input)?;
+    remote_versions(tool)?
+        .into_iter()
+        .filter(|entry| entry.version.matches_prefix(&prefix))
+        .max_by(|lhs, rhs| lhs.version.cmp(&rhs.version))
+        .map(|entry| InstallTarget {
+            version: entry.version,
+            source_url: entry.url,
+        })
+        .ok_or_else(|| format!("no remote {tool} version matches prefix {input}"))
+}
+
 fn resolve_requested_version(tool: Tool, explicit: Option<&str>) -> Result<Version, String> {
     if let Some(version) = explicit {
         return resolve_local_or_exact_version(tool, version);
@@ -1032,20 +1120,6 @@ fn resolve_requested_version(tool: Tool, explicit: Option<&str>) -> Result<Versi
     let version = read_global_version(tool)?
         .ok_or_else(|| format!("no default version configured for {tool}"))?;
     Version::parse(&version)
-}
-
-fn resolve_remote_or_exact_version(tool: Tool, input: &str) -> Result<Version, String> {
-    if let Ok(version) = Version::parse(input) {
-        return Ok(version);
-    }
-    let prefix = VersionPrefix::parse(input)?;
-    resolve_highest_matching_version(
-        remote_versions(tool)?
-            .into_iter()
-            .map(|entry| entry.version),
-        &prefix,
-    )
-    .ok_or_else(|| format!("no remote {tool} version matches prefix {input}"))
 }
 
 fn resolve_local_or_exact_version(tool: Tool, input: &str) -> Result<Version, String> {
@@ -1106,6 +1180,310 @@ fn installed_versions(tool: Tool) -> Result<Vec<Version>, String> {
         }
     }
     Ok(versions)
+}
+
+fn default_source_url(tool: Tool, version: &Version) -> Result<String, String> {
+    match tool {
+        Tool::Gcc => Ok(format!(
+            "https://ftp.gnu.org/gnu/gcc/gcc-{version}/gcc-{version}.tar.xz"
+        )),
+        Tool::Llvm => {
+            let min_supported = Version::parse("9.0.1")?;
+            let src_suffix = Version::parse("11.0.1")?;
+            if version < &min_supported {
+                return Err("LLVM versions older than 9.0.1 are not supported".into());
+            }
+            if version >= &src_suffix {
+                Ok(format!(
+                    "https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/llvm-project-{version}.src.tar.xz"
+                ))
+            } else {
+                Ok(format!(
+                    "https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/llvm-project-{version}.tar.xz"
+                ))
+            }
+        }
+    }
+}
+
+fn cache_root() -> Result<PathBuf, String> {
+    Ok(cvm_home()?.join("cache"))
+}
+
+fn source_cache_root() -> Result<PathBuf, String> {
+    Ok(cache_root()?.join("sources"))
+}
+
+fn source_cache_dir(tool: Tool, version: &Version) -> Result<PathBuf, String> {
+    Ok(source_cache_root()?
+        .join(tool.as_str())
+        .join(version.to_string()))
+}
+
+fn source_archive_name(url: &str) -> Result<String, String> {
+    let path = url.strip_prefix("file://").unwrap_or(url);
+    path.rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("failed to determine archive name from {url}"))
+}
+
+fn ensure_cached_source_archive(
+    tool: Tool,
+    version: &Version,
+    url: &str,
+) -> Result<PathBuf, String> {
+    let dir = source_cache_dir(tool, version)?;
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
+    let archive = dir.join(source_archive_name(url)?);
+    if archive.is_file() {
+        touch_cache_entry(&dir)?;
+        println!(
+            "cache: using {tool} {version} source archive {}",
+            archive.display()
+        );
+        return Ok(archive);
+    }
+
+    println!("cache: downloading {tool} {version} source archive");
+    download_to_file(url, &archive)?;
+    touch_cache_entry(&dir)?;
+    Ok(archive)
+}
+
+fn download_to_file(url: &str, path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
+    }
+    let partial = path.with_file_name(format!(
+        ".{}.part",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("invalid download path")?
+    ));
+    match fs::remove_file(&partial) {
+        Ok(()) => {}
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => return Err(format!("failed to remove {}: {err}", partial.display())),
+    }
+
+    if let Some(source) = url.strip_prefix("file://") {
+        fs::copy(source, &partial).map_err(|e| format!("failed to copy {source}: {e}"))?;
+    } else {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(300))
+            .try_proxy_from_env(true)
+            .build();
+        let response = agent
+            .get(url)
+            .set("User-Agent", &format!("cvm/{CVM_VERSION}"))
+            .call()
+            .map_err(|e| describe_fetch_error(url, e))?;
+        let mut reader = response.into_reader();
+        let mut file = fs::File::create(&partial)
+            .map_err(|e| format!("failed to create {}: {e}", partial.display()))?;
+        io::copy(&mut reader, &mut file)
+            .map_err(|e| format!("failed to write {}: {e}", partial.display()))?;
+    }
+
+    fs::rename(&partial, path).map_err(|e| {
+        format!(
+            "failed to move {} to {}: {e}",
+            partial.display(),
+            path.display()
+        )
+    })
+}
+
+fn touch_cache_entry(dir: &Path) -> Result<(), String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    fs::write(dir.join(".last-used"), format!("{now}\n"))
+        .map_err(|e| format!("failed to update cache entry {}: {e}", dir.display()))
+}
+
+fn read_cache_last_used(dir: &Path) -> u64 {
+    fs::read_to_string(dir.join(".last-used"))
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .or_else(|| {
+            fs::metadata(dir)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs())
+        })
+        .unwrap_or(0)
+}
+
+fn list_cache() -> Result<(), String> {
+    let entries = cache_entries()?;
+    if entries.is_empty() {
+        println!(
+            "no source archives found under {}",
+            source_cache_root()?.display()
+        );
+        return Ok(());
+    }
+    println!("source archives:");
+    for entry in entries {
+        println!(
+            "  {:<4} {:<14} {:>10} {}",
+            entry.tool,
+            entry.version,
+            format_bytes(entry.bytes),
+            entry.path.display()
+        );
+    }
+    Ok(())
+}
+
+fn prune_cache_older_than(max_age_secs: u64, print: bool) -> Result<usize, String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut pruned = 0;
+    for entry in cache_entries()? {
+        if now.saturating_sub(entry.last_used) <= max_age_secs {
+            continue;
+        }
+        fs::remove_dir_all(&entry.dir)
+            .map_err(|e| format!("failed to prune {}: {e}", entry.dir.display()))?;
+        pruned += 1;
+        if print {
+            println!(
+                "cache: pruned {} {} source archive",
+                entry.tool, entry.version
+            );
+        }
+    }
+    Ok(pruned)
+}
+
+fn cache_entries() -> Result<Vec<CacheEntry>, String> {
+    let root = source_cache_root()?;
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::new();
+    for tool in Tool::all() {
+        let tool_dir = root.join(tool.as_str());
+        let read_dir = match fs::read_dir(&tool_dir) {
+            Ok(read_dir) => read_dir,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(format!("failed to read {}: {err}", tool_dir.display())),
+        };
+        for entry in read_dir {
+            let entry =
+                entry.map_err(|err| format!("failed to read {}: {err}", tool_dir.display()))?;
+            if !entry
+                .file_type()
+                .map_err(|err| format!("failed to inspect cache entry: {err}"))?
+                .is_dir()
+            {
+                continue;
+            }
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let Ok(version) = Version::parse(&name) else {
+                continue;
+            };
+            let dir = entry.path();
+            let Some((path, bytes)) = cache_archive_file(&dir)? else {
+                continue;
+            };
+            entries.push(CacheEntry {
+                tool,
+                version,
+                dir: dir.clone(),
+                path,
+                bytes,
+                last_used: read_cache_last_used(&dir),
+            });
+        }
+    }
+    entries.sort_by(|left, right| {
+        left.tool
+            .as_str()
+            .cmp(right.tool.as_str())
+            .then_with(|| right.version.cmp(&left.version))
+    });
+    Ok(entries)
+}
+
+fn cache_archive_file(dir: &Path) -> Result<Option<(PathBuf, u64)>, String> {
+    let mut archives = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| format!("failed to read {}: {e}", dir.display()))? {
+        let entry = entry.map_err(|e| format!("failed to read {}: {e}", dir.display()))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.ends_with(".tar.xz") {
+            let bytes = entry
+                .metadata()
+                .map_err(|e| format!("failed to stat {}: {e}", path.display()))?
+                .len();
+            archives.push((path, bytes));
+        }
+    }
+    archives.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(archives.into_iter().next())
+}
+
+struct CacheEntry {
+    tool: Tool,
+    version: Version,
+    dir: PathBuf,
+    path: PathBuf,
+    bytes: u64,
+    last_used: u64,
+}
+
+fn parse_duration_arg(input: &str) -> Result<u64, String> {
+    let trimmed = input.trim();
+    let digits_len = trimmed
+        .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+        .len();
+    let (digits, unit) = trimmed.split_at(digits_len);
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return Err(format!("invalid duration: {input}"));
+    }
+    let value = digits
+        .parse::<u64>()
+        .map_err(|_| format!("duration is too large: {input}"))?;
+    let multiplier = match unit {
+        "" | "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        _ => return Err(format!("unsupported duration unit: {input}")),
+    };
+    value
+        .checked_mul(multiplier)
+        .ok_or_else(|| format!("duration is too large: {input}"))
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 fn remote_versions(tool: Tool) -> Result<Vec<RemoteVersion>, String> {
@@ -1515,6 +1893,7 @@ fn print_help() {
         "cvm {CVM_VERSION} - compiler version manager\n\n\
          Usage:\n\
            cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST]\n\
+           cvm cache <dir|list|prune>\n\
            cvm profile template <llvm|gcc> [PATH] [--force]\n\
            cvm profile list\n\
            cvm ls-remote [llvm|gcc] [prefix]\n\
@@ -1530,6 +1909,9 @@ fn print_help() {
            cvm version\n\n\
          Examples:\n\
            cvm install llvm 21 -j8\n\
+           cvm cache dir\n\
+           cvm cache list\n\
+           cvm cache prune --older-than 14d\n\
            cvm profile template llvm\n\
            cvm profile list\n\
            cvm install llvm 21 --profile ./llvm-custom.toml\n\

@@ -93,19 +93,56 @@ touch "$prefix/bin/gcc" "$prefix/bin/g++" "$prefix/bin/clang" "$prefix/bin/clang
     format!("{}:{}", fake_bin.display(), env::var("PATH").unwrap())
 }
 
+fn fake_bash_path_with_log(home: &Path, log: &Path) -> String {
+    let fake_bin = home.join("fake-bin-log");
+    fs::create_dir_all(&fake_bin).unwrap();
+    let bash = fake_bin.join("bash");
+    fs::write(
+        &bash,
+        format!(
+            r#"#!/bin/bash
+set -e
+printf '%s\n' "$@" > "{}"
+prefix=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--prefix" ]; then
+    prefix="$arg"
+  fi
+  prev="$arg"
+done
+mkdir -p "$prefix/bin"
+touch "$prefix/bin/gcc" "$prefix/bin/g++" "$prefix/bin/clang" "$prefix/bin/clang++"
+"#,
+            log.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&bash).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&bash, permissions).unwrap();
+    }
+    format!("{}:{}", fake_bin.display(), env::var("PATH").unwrap())
+}
+
 #[test]
 fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
     let home = cvm_home("help");
 
     let version = run(&home, &["--version"]);
     assert!(version.status.success());
-    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.4");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.5");
 
     let help = run(&home, &["help"]);
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("cvm install <llvm|gcc> <version-or-prefix>"));
     assert!(help.contains("cvm profile template <llvm|gcc>"));
+    assert!(help.contains("cvm cache <dir|list|prune>"));
+    assert!(help.contains("cvm cache dir"));
     assert!(help.contains("cvm ls-remote [llvm|gcc] [prefix]"));
     assert!(help.contains("cvm which <llvm|gcc> [version-or-prefix]"));
     assert!(help.contains("cvm upgrade [version] [--dry-run]"));
@@ -115,6 +152,91 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
     assert!(!help.contains("NAME_OR_PATH"));
     assert!(!help.contains("build-profiles"));
     assert!(!help.contains("verify kernel"));
+}
+
+#[test]
+fn cache_commands_print_dir_list_and_prune_stale_entries() {
+    let home = cvm_home("cache");
+    let stale = home.join("cache/sources/llvm/17.0.6");
+    let fresh = home.join("cache/sources/gcc/15.2.0");
+    fs::create_dir_all(&stale).unwrap();
+    fs::create_dir_all(&fresh).unwrap();
+    fs::write(stale.join("llvm-project-17.0.6.src.tar.xz"), "old").unwrap();
+    fs::write(stale.join(".last-used"), "1").unwrap();
+    fs::write(fresh.join("gcc-15.2.0.tar.xz"), "new").unwrap();
+    fs::write(fresh.join(".last-used"), "4102444800").unwrap();
+
+    let dir = run(&home, &["cache", "dir"]);
+    assert!(dir.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&dir.stdout).trim(),
+        home.join("cache").display().to_string()
+    );
+
+    let list = run(&home, &["cache", "list"]);
+    assert!(list.status.success());
+    let stdout = String::from_utf8_lossy(&list.stdout);
+    assert!(stdout.contains("llvm 17.0.6"));
+    assert!(stdout.contains("gcc 15.2.0"));
+
+    let prune = run(&home, &["cache", "prune", "--older-than", "14d"]);
+    assert!(prune.status.success());
+    assert!(!stale.exists());
+    assert!(fresh.exists());
+    assert!(String::from_utf8_lossy(&prune.stdout).contains("cache: pruned llvm 17.0.6"));
+}
+
+#[test]
+fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
+    let home = cvm_home("install-cache");
+    let archive = home.join("llvm-project-21.1.8.src.tar.xz");
+    fs::write(&archive, "archive").unwrap();
+    let index_url = write_fixture(
+        &home,
+        "remote-index.json",
+        &format!(
+            r#"{{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T00:00:00Z",
+  "cvm": {{"latest": "v0.0.5"}},
+  "compilers": {{
+    "gcc": [],
+    "llvm": [
+      {{"version": "21.1.8", "date": "2025-12-01", "url": "file://{}"}}
+    ]
+  }}
+}}"#,
+            archive.display()
+        ),
+    );
+    let log = home.join("bash-args.log");
+    let path = fake_bash_path_with_log(&home, &log);
+
+    let first = run_with_env(
+        &home,
+        &["install", "llvm", "21", "-j1"],
+        &[("CVM_REMOTE_INDEX_URL", &index_url), ("PATH", &path)],
+    );
+    assert!(first.status.success());
+
+    let cached_archive = home
+        .join("cache/sources/llvm/21.1.8")
+        .join("llvm-project-21.1.8.src.tar.xz");
+    assert!(cached_archive.exists());
+    let args = fs::read_to_string(&log).unwrap();
+    assert!(args.contains("--archive\n"));
+    assert!(args.contains(&cached_archive.display().to_string()));
+
+    fs::remove_file(&archive).unwrap();
+    let second = run_with_env(
+        &home,
+        &["install", "llvm", "21", "-j1"],
+        &[("CVM_REMOTE_INDEX_URL", &index_url), ("PATH", &path)],
+    );
+    assert!(second.status.success());
+    assert!(
+        String::from_utf8_lossy(&second.stdout).contains("cache: using llvm 21.1.8 source archive")
+    );
 }
 
 #[test]

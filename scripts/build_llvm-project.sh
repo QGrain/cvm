@@ -10,6 +10,7 @@ Build and install llvm-project from source into a versioned prefix.
 Options:
   -j, --jobs N              Ninja parallelism (default: half of nproc, minimum 1)
       --prefix DIR          Install prefix (default: $PWD/llvm-project-${VERSION}.install)
+      --archive FILE        Use an existing llvm-project source archive
       --targets LIST        LLVM targets (default: X86)
       --force-configure     Remove an existing build directory before CMake
   -h, --help                Show this help
@@ -84,6 +85,7 @@ runtimes="${CVM_LLVM_RUNTIMES:-libcxx;libcxxabi;libunwind}"
 build_type="${CVM_LLVM_BUILD_TYPE:-Release}"
 force_configure=0
 version=""
+archive_input=""
 
 while (($#)); do
 	case "$1" in
@@ -104,6 +106,11 @@ while (($#)); do
 		shift
 		[[ $# -gt 0 ]] || die "--prefix requires a value"
 		prefix=$1
+		;;
+	--archive)
+		shift
+		[[ $# -gt 0 ]] || die "--archive requires a value"
+		archive_input=$1
 		;;
 	--targets)
 		shift
@@ -147,11 +154,15 @@ sudo apt install -y cmake ninja-build libedit-dev python3-dev swig wget xz-utils
 cwd=$(pwd -P)
 prefix=${prefix:-"${cwd}/llvm-project-${version}.install"}
 url=$(llvm_url "$version")
-archive=$(basename "$url")
-src_dir=${archive%.tar.xz}
+archive=${archive_input:-$(basename "$url")}
+archive_name=$(basename "$archive")
+src_dir=${archive_name%.tar.xz}
 build_dir="${src_dir}/build"
 
-if [[ ! -f $archive ]]; then
+if [[ -n $archive_input && ! -f $archive ]]; then
+	die "archive does not exist: $archive"
+fi
+if [[ -z $archive_input && ! -f $archive ]]; then
 	wget -O "$archive" "$url"
 fi
 
@@ -189,7 +200,10 @@ for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-
 	[[ -x "${prefix}/bin/${tool}" ]] || die "missing installed tool: ${prefix}/bin/${tool}"
 done
 
-rm -rf "$src_dir" "$archive"
+rm -rf "$src_dir"
+if [[ -z $archive_input ]]; then
+	rm -f "$archive"
+fi
 
 cat <<EOF
 Installed LLVM ${version} to ${prefix}

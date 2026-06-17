@@ -38,6 +38,7 @@ cvm install gcc 15 -j8
 
 cvm ls-remote llvm 21
 cvm ls
+cvm cache list
 
 cvm use llvm 21
 cvm which llvm
@@ -56,6 +57,9 @@ cvm install llvm 21
 
 ```text
 cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST]
+cvm cache dir
+cvm cache list
+cvm cache prune [--older-than 14d]
 cvm profile template <llvm|gcc> [PATH] [--force]
 cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
@@ -81,6 +85,7 @@ eval "$(cvm use llvm 21)"
 
 - [设计说明](docs/design.md)
 - [构建配置](docs/build-profiles.md)
+- [源码缓存](docs/cache.md)
 - [发布流程](docs/release.md)
 - [故障排查](docs/troubleshooting.md)
 - [贡献指南](docs/contribution.md)

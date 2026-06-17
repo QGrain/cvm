@@ -7,6 +7,7 @@ $CVM_HOME/bin/cvm
 $CVM_HOME/cvm.sh
 $CVM_HOME/toolchains/llvm/<version>
 $CVM_HOME/toolchains/gcc/<version>
+$CVM_HOME/cache/sources/<llvm|gcc>/<version>
 $CVM_HOME/defaults/{llvm,gcc}
 $CVM_HOME/scripts/
 ```
@@ -45,6 +46,17 @@ Compiler source builds are delegated to embedded backend scripts:
 
 At runtime, cvm materializes the selected backend under `$CVM_HOME/scripts` and
 invokes it with a versioned install prefix.
+
+## Source Cache
+
+`cvm install` downloads compiler source archives into
+`$CVM_HOME/cache/sources/<tool>/<version>/` and passes the cached archive to the
+backend script. Backend scripts still support direct standalone use; when run
+outside cvm, they download sources into the current directory as before.
+
+The cache uses lazy pruning with a default 14-day lifetime. cvm does not install
+cron jobs or background services. Cache pruning never removes installed
+toolchains under `$CVM_HOME/toolchains`.
 
 ## Build Profiles
 

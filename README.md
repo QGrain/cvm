@@ -43,6 +43,7 @@ cvm install gcc 15 -j8
 
 cvm ls-remote llvm 21
 cvm ls
+cvm cache list
 
 cvm use llvm 21
 cvm which llvm
@@ -62,6 +63,9 @@ as the persistent default automatically.
 
 ```text
 cvm install <llvm|gcc> <version-or-prefix> [-jN|--jobs N] [--profile PATH] [--targets LIST]
+cvm cache dir
+cvm cache list
+cvm cache prune [--older-than 14d]
 cvm profile template <llvm|gcc> [PATH] [--force]
 cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
@@ -88,6 +92,7 @@ eval "$(cvm use llvm 21)"
 
 - [Design notes](docs/design.md)
 - [Build profiles](docs/build-profiles.md)
+- [Source cache](docs/cache.md)
 - [Release process](docs/release.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Contribution guide](docs/contribution.md)

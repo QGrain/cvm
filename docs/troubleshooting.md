@@ -26,6 +26,23 @@ Use the lowercase and uppercase variants if your environment requires both.
 `cvm ls-remote`, `cvm version`, and `cvm upgrade` read the remote index through
 this network path.
 
+Compiler source archives downloaded by `cvm install` are cached under
+`$CVM_HOME/cache/sources`. If a download succeeds but the build later fails,
+re-running the same install can reuse the cached archive.
+
+## Cache Disk Usage
+
+Source archives can be hundreds of megabytes each. Inspect and prune them with:
+
+```sh
+cvm cache list
+cvm cache prune
+cvm cache prune --older-than 14d
+```
+
+Cache pruning only removes downloaded source archives. It does not remove
+installed toolchains under `$CVM_HOME/toolchains`.
+
 ## PATH Priority
 
 The installer writes `cvm` to `$CVM_HOME/bin/cvm` and loads `$CVM_HOME/cvm.sh`

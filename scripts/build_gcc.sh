@@ -10,6 +10,7 @@ Build and install GCC from source into a versioned prefix.
 Options:
   -j, --jobs N              Make parallelism (default: half of nproc, minimum 1)
       --prefix DIR          Install prefix (default: $PWD/gcc-${VERSION}.install)
+      --archive FILE        Use an existing GCC source archive
       --force-configure     Remove an existing build directory before configure
   -h, --help                Show this help
 
@@ -51,6 +52,7 @@ mirror="https://ftp.gnu.org/gnu/gcc"
 build_dir=""
 force_configure=0
 version=""
+archive_input=""
 
 while (($#)); do
 	case "$1" in
@@ -71,6 +73,11 @@ while (($#)); do
 		shift
 		[[ $# -gt 0 ]] || die "--prefix requires a value"
 		prefix=$1
+		;;
+	--archive)
+		shift
+		[[ $# -gt 0 ]] || die "--archive requires a value"
+		archive_input=$1
 		;;
 	--force-configure)
 		force_configure=1
@@ -116,11 +123,14 @@ cwd=$(pwd -P)
 src_dir="gcc-${version}"
 prefix=${prefix:-"${cwd}/gcc-${version}.install"}
 build_dir=${build_dir:-"${src_dir}/build"}
-archive="${src_dir}.tar.xz"
+archive=${archive_input:-"${src_dir}.tar.xz"}
 url="${mirror}/gcc-${version}/${archive}"
 configure_script="${cwd}/${src_dir}/configure"
 
-if [[ ! -f $archive ]]; then
+if [[ -n $archive_input && ! -f $archive ]]; then
+	die "archive does not exist: $archive"
+fi
+if [[ -z $archive_input && ! -f $archive ]]; then
 	wget -O "$archive" "$url"
 fi
 
@@ -165,7 +175,10 @@ for tool in gcc g++ cpp gcov; do
 	[[ -x "${prefix}/bin/${tool}" ]] || die "missing installed tool: ${prefix}/bin/${tool}"
 done
 
-rm -rf "$src_dir" "$archive"
+rm -rf "$src_dir"
+if [[ -z $archive_input ]]; then
+	rm -f "$archive"
+fi
 
 cat <<EOF
 Installed GCC ${version} to ${prefix}
