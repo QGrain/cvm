@@ -11,8 +11,8 @@ fn docs_use_qgrain_repository_and_initial_version() {
         assert!(!text.contains("olduser/cvm"));
     }
 
-    assert!(readme.contains("v0.0.4"));
-    assert!(readme_cn.contains("v0.0.4"));
+    assert!(readme.contains("v0.0.5"));
+    assert!(readme_cn.contains("v0.0.5"));
     assert!(readme.contains("assets/logos/cvm-logo-color.svg"));
     assert!(readme_cn.contains("assets/logos/cvm-logo-color.svg"));
     assert!(readme.contains("$HOME/.cvm"));
@@ -85,7 +85,7 @@ fn install_script_supports_local_checkout_and_source_fallback() {
     let install = fs::read_to_string("install.sh").unwrap();
 
     assert!(install.contains("cvm_latest_version()"));
-    assert!(install.contains("v0.0.4"));
+    assert!(install.contains("v0.0.5"));
     assert!(install.contains("is_local_checkout()"));
     assert!(install.contains("install_from_local_checkout()"));
     assert!(install.contains("cargo build --release"));

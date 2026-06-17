@@ -2,7 +2,7 @@
   "schema_version": 1,
   "generated_at": "2026-06-15T09:45:27Z",
   "cvm": {
-    "latest": "v0.0.4"
+    "latest": "v0.0.5"
   },
   "compilers": {
     "gcc": [

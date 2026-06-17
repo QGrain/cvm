@@ -62,6 +62,48 @@ fn write_fixture(home: &Path, name: &str, body: &str) -> String {
     format!("file://{}", path.display())
 }
 
+fn write_install_index(home: &Path, tool: &str, version: &str) -> (String, PathBuf) {
+    let archive_name = match tool {
+        "llvm" => format!("llvm-project-{version}.src.tar.xz"),
+        "gcc" => format!("gcc-{version}.tar.xz"),
+        _ => panic!("unsupported tool"),
+    };
+    let archive = home.join(&archive_name);
+    fs::write(&archive, "archive").unwrap();
+    let index_url = write_fixture(
+        home,
+        &format!("remote-index-{tool}-{version}.json"),
+        &format!(
+            r#"{{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T00:00:00Z",
+  "cvm": {{"latest": "v0.0.5"}},
+  "compilers": {{
+    "gcc": [{}],
+    "llvm": [{}]
+  }}
+}}"#,
+            if tool == "gcc" {
+                format!(
+                    r#"{{"version": "{version}", "date": "2026-01-01", "url": "file://{}"}}"#,
+                    archive.display()
+                )
+            } else {
+                String::new()
+            },
+            if tool == "llvm" {
+                format!(
+                    r#"{{"version": "{version}", "date": "2026-01-01", "url": "file://{}"}}"#,
+                    archive.display()
+                )
+            } else {
+                String::new()
+            }
+        ),
+    );
+    (index_url, archive)
+}
+
 fn fake_bash_path(home: &Path) -> String {
     let fake_bin = home.join("fake-bin");
     fs::create_dir_all(&fake_bin).unwrap();
@@ -548,11 +590,12 @@ targets = "X86"
 fn install_sets_default_when_first_managed_version_is_installed() {
     let home = cvm_home("install-default");
     let path = fake_bash_path(&home);
+    let (index_url, _archive) = write_install_index(&home, "gcc", "15.1.0");
 
     let output = run_with_env(
         &home,
-        &["install", "gcc", "15.1.0", "-j1"],
-        &[("PATH", &path)],
+        &["install", "gcc", "15", "-j1"],
+        &[("PATH", &path), ("CVM_REMOTE_INDEX_URL", &index_url)],
     );
 
     assert!(output.status.success());
@@ -569,6 +612,8 @@ fn install_sets_default_when_first_managed_version_is_installed() {
 fn install_does_not_override_existing_default_or_custom_prefix() {
     let home = cvm_home("install-no-default");
     let path = fake_bash_path(&home);
+    let (index_15, _archive_15) = write_install_index(&home, "gcc", "15.1.0");
+    let (index_13, _archive_13) = write_install_index(&home, "gcc", "13.3.0");
     mark_installed(&home, "gcc", "14.2.0");
     assert!(run(&home, &["alias", "default", "gcc", "14.2.0"])
         .status
@@ -576,8 +621,8 @@ fn install_does_not_override_existing_default_or_custom_prefix() {
 
     let output = run_with_env(
         &home,
-        &["install", "gcc", "15.1.0", "-j1"],
-        &[("PATH", &path)],
+        &["install", "gcc", "15", "-j1"],
+        &[("PATH", &path), ("CVM_REMOTE_INDEX_URL", &index_15)],
     );
     assert!(output.status.success());
     assert_eq!(
@@ -590,14 +635,8 @@ fn install_does_not_override_existing_default_or_custom_prefix() {
     let custom = home.join("custom-gcc");
     let output = run_with_env(
         &home,
-        &[
-            "install",
-            "gcc",
-            "13.3.0",
-            "--prefix",
-            custom.to_str().unwrap(),
-        ],
-        &[("PATH", &path)],
+        &["install", "gcc", "13", "--prefix", custom.to_str().unwrap()],
+        &[("PATH", &path), ("CVM_REMOTE_INDEX_URL", &index_13)],
     );
     assert!(output.status.success());
     assert_eq!(
@@ -787,7 +826,7 @@ fn version_checks_latest_release_without_failing_on_network_success() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.5"},
+  "cvm": {"latest": "v0.0.6"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -796,8 +835,8 @@ fn version_checks_latest_release_without_failing_on_network_success() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cvm 0.0.4"));
-    assert!(stdout.contains("new version available: v0.0.5"));
+    assert!(stdout.contains("cvm 0.0.5"));
+    assert!(stdout.contains("new version available: v0.0.6"));
     assert!(stdout.contains("cvm upgrade"));
     assert!(stdout.contains("diagnostics:"));
     assert!(stdout.contains("CVM_HOME:"));
