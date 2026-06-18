@@ -70,6 +70,7 @@ fn write_install_index(home: &Path, tool: &str, version: &str) -> (String, PathB
     };
     let archive = home.join(&archive_name);
     fs::write(&archive, "archive").unwrap();
+    fs::write(home.join(format!("{archive_name}.sig")), "signature").unwrap();
     let index_url = write_fixture(
         home,
         &format!("remote-index-{tool}-{version}.json"),
@@ -77,7 +78,7 @@ fn write_install_index(home: &Path, tool: &str, version: &str) -> (String, PathB
             r#"{{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {{"latest": "v0.0.5"}},
+  "cvm": {{"latest": "v0.0.6"}},
   "compilers": {{
     "gcc": [{}],
     "llvm": [{}]
@@ -125,12 +126,23 @@ touch "$prefix/bin/gcc" "$prefix/bin/g++" "$prefix/bin/clang" "$prefix/bin/clang
 "#,
     )
     .unwrap();
+    let gpg = fake_bin.join("gpg");
+    fs::write(
+        &gpg,
+        r#"#!/bin/bash
+set -e
+exit 0
+"#,
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&bash).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&bash, permissions).unwrap();
+        for path in [&bash, &gpg] {
+            let mut permissions = fs::metadata(path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).unwrap();
+        }
     }
     format!("{}:{}", fake_bin.display(), env::var("PATH").unwrap())
 }
@@ -160,12 +172,28 @@ touch "$prefix/bin/gcc" "$prefix/bin/g++" "$prefix/bin/clang" "$prefix/bin/clang
         ),
     )
     .unwrap();
+    let gpg = fake_bin.join("gpg");
+    let gpg_log = log.with_file_name("gpg-args.log");
+    fs::write(
+        &gpg,
+        format!(
+            r#"#!/bin/bash
+set -e
+printf '%s\n' "$@" > "{}"
+exit 0
+"#,
+            gpg_log.display()
+        ),
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&bash).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&bash, permissions).unwrap();
+        for path in [&bash, &gpg] {
+            let mut permissions = fs::metadata(path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).unwrap();
+        }
     }
     format!("{}:{}", fake_bin.display(), env::var("PATH").unwrap())
 }
@@ -176,7 +204,7 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
 
     let version = run(&home, &["--version"]);
     assert!(version.status.success());
-    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.5");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.0.6");
 
     let help = run(&home, &["help"]);
     assert!(help.status.success());
@@ -233,6 +261,7 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
     let home = cvm_home("install-cache");
     let archive = home.join("llvm-project-21.1.8.src.tar.xz");
     fs::write(&archive, "archive").unwrap();
+    fs::write(home.join("llvm-project-21.1.8.src.tar.xz.sig"), "signature").unwrap();
     let index_url = write_fixture(
         &home,
         "remote-index.json",
@@ -240,7 +269,7 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
             r#"{{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {{"latest": "v0.0.5"}},
+  "cvm": {{"latest": "v0.0.6"}},
   "compilers": {{
     "gcc": [],
     "llvm": [
@@ -264,10 +293,16 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
     let cached_archive = home
         .join("cache/sources/llvm/21.1.8")
         .join("llvm-project-21.1.8.src.tar.xz");
+    let cached_signature = cached_archive.with_file_name("llvm-project-21.1.8.src.tar.xz.sig");
     assert!(cached_archive.exists());
+    assert!(cached_signature.exists());
     let args = fs::read_to_string(&log).unwrap();
     assert!(args.contains("--archive\n"));
     assert!(args.contains(&cached_archive.display().to_string()));
+    let gpg_args = fs::read_to_string(home.join("gpg-args.log")).unwrap();
+    assert!(gpg_args.contains("--verify\n"));
+    assert!(gpg_args.contains(&cached_signature.display().to_string()));
+    assert!(gpg_args.contains(&cached_archive.display().to_string()));
 
     fs::remove_file(&archive).unwrap();
     let second = run_with_env(
@@ -279,6 +314,44 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
     assert!(
         String::from_utf8_lossy(&second.stdout).contains("cache: using llvm 21.1.8 source archive")
     );
+    assert!(
+        String::from_utf8_lossy(&second.stdout).contains("verify: llvm 21.1.8 source signature OK")
+    );
+}
+
+#[test]
+fn install_fails_when_source_signature_is_missing() {
+    let home = cvm_home("install-missing-sig");
+    let archive = home.join("gcc-15.1.0.tar.xz");
+    fs::write(&archive, "archive").unwrap();
+    let index_url = write_fixture(
+        &home,
+        "remote-index.json",
+        &format!(
+            r#"{{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T00:00:00Z",
+  "cvm": {{"latest": "v0.0.6"}},
+  "compilers": {{
+    "gcc": [
+      {{"version": "15.1.0", "date": "2025-04-25", "url": "file://{}"}}
+    ],
+    "llvm": []
+  }}
+}}"#,
+            archive.display()
+        ),
+    );
+    let path = fake_bash_path(&home);
+
+    let output = run_with_env(
+        &home,
+        &["install", "gcc", "15", "-j1"],
+        &[("CVM_REMOTE_INDEX_URL", &index_url), ("PATH", &path)],
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("failed to download source signature"));
 }
 
 #[test]
@@ -826,7 +899,7 @@ fn version_checks_latest_release_without_failing_on_network_success() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.6"},
+  "cvm": {"latest": "v0.0.7"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -835,8 +908,8 @@ fn version_checks_latest_release_without_failing_on_network_success() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cvm 0.0.5"));
-    assert!(stdout.contains("new version available: v0.0.6"));
+    assert!(stdout.contains("cvm 0.0.6"));
+    assert!(stdout.contains("new version available: v0.0.7"));
     assert!(stdout.contains("cvm upgrade"));
     assert!(stdout.contains("diagnostics:"));
     assert!(stdout.contains("CVM_HOME:"));
@@ -853,7 +926,7 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.5"},
+  "cvm": {"latest": "v0.0.6"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -866,9 +939,9 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("upgrade: v0.0.5"));
+    assert!(stdout.contains("upgrade: v0.0.6"));
     assert!(stdout
-        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.0.5/install.sh"));
+        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.0.6/install.sh"));
 }
 
 #[test]

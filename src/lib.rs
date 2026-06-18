@@ -203,6 +203,11 @@ struct InstallTarget {
     source_url: String,
 }
 
+struct SourcePackage {
+    archive: PathBuf,
+    signature: PathBuf,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RemoteIndex {
@@ -532,9 +537,10 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
     }
 
     prune_cache_older_than(DEFAULT_CACHE_TTL_SECS, true)?;
-    let archive = ensure_cached_source_archive(tool, &version, &target.source_url)?;
+    let source = ensure_cached_source_package(tool, &version, &target.source_url)?;
+    verify_source_signature(tool, &version, &source)?;
     command_args.push("--archive".to_string());
-    command_args.push(archive.display().to_string());
+    command_args.push(source.archive.display().to_string());
 
     let mut command = Command::new("bash");
     command.args(command_args);
@@ -1229,27 +1235,63 @@ fn source_archive_name(url: &str) -> Result<String, String> {
         .ok_or_else(|| format!("failed to determine archive name from {url}"))
 }
 
-fn ensure_cached_source_archive(
+fn ensure_cached_source_package(
     tool: Tool,
     version: &Version,
     url: &str,
-) -> Result<PathBuf, String> {
+) -> Result<SourcePackage, String> {
     let dir = source_cache_dir(tool, version)?;
     fs::create_dir_all(&dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
     let archive = dir.join(source_archive_name(url)?);
-    if archive.is_file() {
+    let signature = archive.with_file_name(format!(
+        "{}.sig",
+        archive
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("invalid archive name")?
+    ));
+    let downloaded_archive = if archive.is_file() {
         touch_cache_entry(&dir)?;
         println!(
             "cache: using {tool} {version} source archive {}",
             archive.display()
         );
-        return Ok(archive);
-    }
+        false
+    } else {
+        println!("cache: downloading {tool} {version} source archive");
+        download_to_file(url, &archive)?;
+        true
+    };
 
-    println!("cache: downloading {tool} {version} source archive");
-    download_to_file(url, &archive)?;
+    if downloaded_archive || !signature.is_file() {
+        let signature_url = format!("{url}.sig");
+        println!("cache: downloading {tool} {version} source signature");
+        download_to_file(&signature_url, &signature)
+            .map_err(|err| format!("failed to download source signature: {err}"))?;
+    }
     touch_cache_entry(&dir)?;
-    Ok(archive)
+    Ok(SourcePackage { archive, signature })
+}
+
+fn verify_source_signature(
+    tool: Tool,
+    version: &Version,
+    source: &SourcePackage,
+) -> Result<(), String> {
+    let status = Command::new("gpg")
+        .arg("--verify")
+        .arg(&source.signature)
+        .arg(&source.archive)
+        .status()
+        .map_err(|e| format!("failed to run gpg for source signature verification: {e}"))?;
+    if !status.success() {
+        return Err(format!(
+            "source signature verification failed for {}",
+            source.archive.display()
+        ));
+    }
+    println!("verify: {tool} {version} source signature OK");
+    Ok(())
 }
 
 fn download_to_file(url: &str, path: &Path) -> Result<(), String> {
