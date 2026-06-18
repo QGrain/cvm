@@ -58,8 +58,27 @@ git tag -a vX.Y.Z -m "vX.Y.Z: short release theme"
 git push origin vX.Y.Z
 ```
 
-Use the GitHub release title as the tag only, for example `v0.0.5`. Put the
+Use the GitHub release title as the tag only, for example `v0.0.6`. Put the
 release theme and details in the release note body.
+
+## Signing Setup
+
+Release assets are signed with a cvm-specific GPG key. Configure these
+repository secrets before publishing a signed release:
+
+```text
+CVM_RELEASE_GPG_PRIVATE_KEY
+CVM_RELEASE_GPG_PASSPHRASE
+CVM_RELEASE_GPG_KEY_ID
+```
+
+Publish the matching public key at:
+
+```text
+assets/keys/cvm-release-signing-key.asc
+```
+
+See [Release Signing](signing.md) for key generation and secret setup.
 
 ## Release Note Template
 
@@ -72,18 +91,12 @@ release theme and details in the release note body.
 
 - ...
 
-## Verification
-
-- `cargo fmt --check`
-- `cargo test`
-- `cargo clippy --all-targets -- -D warnings`
-
 ## Verifying Packages
 
 Download the cvm release signing key, import it, then verify the asset:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/QGrain/cvm/main/docs/keys/cvm-release-signing-key.asc
+curl -fsSLO https://raw.githubusercontent.com/QGrain/cvm/vX.Y.Z/assets/keys/cvm-release-signing-key.asc
 gpg --import cvm-release-signing-key.asc
 curl -fsSLO https://github.com/QGrain/cvm/releases/download/vX.Y.Z/<asset>.tar.gz
 curl -fsSLO https://github.com/QGrain/cvm/releases/download/vX.Y.Z/<asset>.tar.gz.sig

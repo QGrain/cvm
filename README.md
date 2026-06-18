@@ -94,6 +94,7 @@ eval "$(cvm use llvm 21)"
 - [Build profiles](docs/build-profiles.md)
 - [Source cache](docs/cache.md)
 - [Release process](docs/release.md)
+- [Release signing](docs/signing.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Contribution guide](docs/contribution.md)
 

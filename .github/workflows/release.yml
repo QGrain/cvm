@@ -87,7 +87,42 @@ jobs:
           cp "target/${{ matrix.target }}/release/cvm" dist/package/cvm
           tar -C dist/package -czf "dist/${{ matrix.asset }}" cvm
 
+      - name: Install signing tools
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install gnupg
+          fi
+
+      - name: Import release signing key
+        env:
+          CVM_RELEASE_GPG_PRIVATE_KEY: ${{ secrets.CVM_RELEASE_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$CVM_RELEASE_GPG_PRIVATE_KEY"
+          printf '%s' "$CVM_RELEASE_GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Sign release asset
+        env:
+          CVM_RELEASE_GPG_KEY_ID: ${{ secrets.CVM_RELEASE_GPG_KEY_ID }}
+          CVM_RELEASE_GPG_PASSPHRASE: ${{ secrets.CVM_RELEASE_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$CVM_RELEASE_GPG_KEY_ID"
+          test -n "$CVM_RELEASE_GPG_PASSPHRASE"
+          gpg --batch --yes --detach-sign --armor \
+            --pinentry-mode loopback \
+            --passphrase "$CVM_RELEASE_GPG_PASSPHRASE" \
+            --local-user "$CVM_RELEASE_GPG_KEY_ID" \
+            --output "dist/${{ matrix.asset }}.sig" \
+            "dist/${{ matrix.asset }}"
+
       - name: Upload release asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" "dist/${{ matrix.asset }}" --repo "$GITHUB_REPOSITORY" --clobber
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "dist/${{ matrix.asset }}" \
+            "dist/${{ matrix.asset }}.sig" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

@@ -11,8 +11,8 @@ fn docs_use_qgrain_repository_and_initial_version() {
         assert!(!text.contains("olduser/cvm"));
     }
 
-    assert!(readme.contains("v0.0.5"));
-    assert!(readme_cn.contains("v0.0.5"));
+    assert!(readme.contains("v0.0.6"));
+    assert!(readme_cn.contains("v0.0.6"));
     assert!(readme.contains("assets/logos/cvm-logo-color.svg"));
     assert!(readme_cn.contains("assets/logos/cvm-logo-color.svg"));
     assert!(readme.contains("$HOME/.cvm"));
@@ -36,12 +36,14 @@ fn docs_use_qgrain_repository_and_initial_version() {
     assert!(readme.contains("docs/build-profiles.md"));
     assert!(readme.contains("docs/cache.md"));
     assert!(readme.contains("docs/release.md"));
+    assert!(readme.contains("docs/signing.md"));
     assert!(readme.contains("docs/troubleshooting.md"));
     assert!(readme.contains("docs/contribution.md"));
     assert!(readme_cn.contains("docs/design.md"));
     assert!(readme_cn.contains("docs/build-profiles.md"));
     assert!(readme_cn.contains("docs/cache.md"));
     assert!(readme_cn.contains("docs/release.md"));
+    assert!(readme_cn.contains("docs/signing.md"));
     assert!(readme_cn.contains("docs/troubleshooting.md"));
     assert!(readme_cn.contains("docs/contribution.md"));
 }
@@ -85,7 +87,7 @@ fn install_script_supports_local_checkout_and_source_fallback() {
     let install = fs::read_to_string("install.sh").unwrap();
 
     assert!(install.contains("cvm_latest_version()"));
-    assert!(install.contains("v0.0.5"));
+    assert!(install.contains("v0.0.6"));
     assert!(install.contains("is_local_checkout()"));
     assert!(install.contains("install_from_local_checkout()"));
     assert!(install.contains("cargo build --release"));
@@ -147,6 +149,7 @@ fn release_workflow_assets_match_installer_names() {
     let contribution = fs::read_to_string("docs/contribution.md").unwrap();
     let build_profiles = fs::read_to_string("docs/build-profiles.md").unwrap();
     let cache = fs::read_to_string("docs/cache.md").unwrap();
+    let signing = fs::read_to_string("docs/signing.md").unwrap();
 
     for target in [
         "x86_64-unknown-linux-musl",
@@ -163,6 +166,11 @@ fn release_workflow_assets_match_installer_names() {
     assert!(workflow.contains("gh release create"));
     assert!(workflow.contains("--generate-notes"));
     assert!(workflow.contains("gh release upload"));
+    assert!(workflow.contains("gpg --batch --yes --detach-sign --armor"));
+    assert!(workflow.contains("dist/${{ matrix.asset }}.sig"));
+    assert!(workflow.contains("CVM_RELEASE_GPG_PRIVATE_KEY"));
+    assert!(workflow.contains("CVM_RELEASE_GPG_PASSPHRASE"));
+    assert!(workflow.contains("CVM_RELEASE_GPG_KEY_ID"));
     assert!(workflow.contains("--clobber"));
     assert!(workflow.contains("workflow_dispatch"));
     assert!(workflow.contains("Release tag to build, for example v0.0.1"));
@@ -172,6 +180,7 @@ fn release_workflow_assets_match_installer_names() {
     assert!(release_docs.contains("v0.0.1"));
     assert!(release_docs.contains("Verifying Packages"));
     assert!(release_docs.contains("gpg --verify <asset>.tar.gz.sig <asset>.tar.gz"));
+    assert!(!release_docs.contains("## Verification"));
     assert!(contribution.contains("cargo clippy --all-targets -- -D warnings"));
     assert!(contribution.contains("Commit and PR Guidelines"));
     assert!(contribution.contains("Keep unrelated changes in separate commits"));
@@ -190,4 +199,10 @@ fn release_workflow_assets_match_installer_names() {
     assert!(cache.contains("cvm cache list"));
     assert!(cache.contains("$CVM_HOME/cache/sources"));
     assert!(cache.contains("14 days"));
+    assert!(signing.contains("gpg --full-generate-key"));
+    assert!(signing.contains("CVM_RELEASE_GPG_PRIVATE_KEY"));
+    assert!(signing.contains("assets/keys/cvm-release-signing-key.asc"));
+    assert!(fs::metadata("assets/keys/cvm-release-signing-key.asc")
+        .unwrap()
+        .is_file());
 }

@@ -87,6 +87,7 @@ eval "$(cvm use llvm 21)"
 - [构建配置](docs/build-profiles.md)
 - [源码缓存](docs/cache.md)
 - [发布流程](docs/release.md)
+- [发布签名](docs/signing.md)
 - [故障排查](docs/troubleshooting.md)
 - [贡献指南](docs/contribution.md)
 

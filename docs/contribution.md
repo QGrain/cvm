@@ -88,7 +88,6 @@ Release notes should stay concise and include:
 
 - `What's Changed`
 - `Documentation`, when user-facing docs changed
-- `Verification`, listing local checks that passed
 - `Verifying Packages`, when release assets have `.sig` files
 
 The `Verifying Packages` section should show users how to download the cvm
