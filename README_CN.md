@@ -32,6 +32,17 @@ cd cvm
 
 重复运行安装器只会替换 cvm binary 并重新生成 `cvm.sh`；`$HOME/.cvm` 下已经安装的工具链和默认版本配置会被保留。
 
+`cvm install llvm ...` 和 `cvm install gcc ...` 会把上游 release key bundle
+下载到 `$CVM_HOME/cache/keys`，通过 `gpg` 导入，并在构建前使用 detached
+GPG 签名校验源码包。`install.sh` 引导安装器目前不会自动校验 cvm release
+asset；如果用户希望审计引导 binary，可以手动下载 GitHub Release 中对应的
+`.sig` asset 进行校验。
+
+源码构建会通过 `apt` 自动安装 Debian/Ubuntu 构建依赖。非 root 用户执行
+`cvm install` 时，后端脚本会调用 `sudo apt update` 和 `sudo apt install`；
+在 root 容器中则会直接调用 `apt`。在权限受限的环境中运行前，建议先审阅
+后端构建脚本。
+
 ## 快速开始
 
 ```sh

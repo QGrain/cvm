@@ -21,6 +21,8 @@ const CVM_REPO: &str = "QGrain/cvm";
 const DEFAULT_REMOTE_INDEX_URL: &str =
     "https://raw.githubusercontent.com/QGrain/cvm/main/manifests/remote-index.json";
 const DEFAULT_CACHE_TTL_SECS: u64 = 14 * 24 * 60 * 60;
+const LLVM_RELEASE_KEYS_URL: &str = "https://releases.llvm.org/release-keys.asc";
+const GCC_RELEASE_KEYS_URL: &str = "https://ftp.gnu.org/gnu/gnu-keyring.gpg";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Version {
@@ -538,6 +540,7 @@ fn cmd_install(args: &[String]) -> Result<(), String> {
 
     prune_cache_older_than(DEFAULT_CACHE_TTL_SECS, true)?;
     let source = ensure_cached_source_package(tool, &version, &target.source_url)?;
+    ensure_source_release_keys(tool)?;
     verify_source_signature(tool, &version, &source)?;
     command_args.push("--archive".to_string());
     command_args.push(source.archive.display().to_string());
@@ -1224,6 +1227,74 @@ fn source_cache_dir(tool: Tool, version: &Version) -> Result<PathBuf, String> {
     Ok(source_cache_root()?
         .join(tool.as_str())
         .join(version.to_string()))
+}
+
+fn key_cache_root() -> Result<PathBuf, String> {
+    Ok(cache_root()?.join("keys"))
+}
+
+fn source_release_key_name(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Llvm => "release-keys.asc",
+        Tool::Gcc => "gnu-keyring.gpg",
+    }
+}
+
+fn source_release_key_url(tool: Tool) -> String {
+    let env_key = match tool {
+        Tool::Llvm => "CVM_LLVM_RELEASE_KEYS_URL",
+        Tool::Gcc => "CVM_GCC_RELEASE_KEYS_URL",
+    };
+    env::var(env_key).unwrap_or_else(|_| {
+        match tool {
+            Tool::Llvm => LLVM_RELEASE_KEYS_URL,
+            Tool::Gcc => GCC_RELEASE_KEYS_URL,
+        }
+        .to_string()
+    })
+}
+
+fn ensure_source_release_keys(tool: Tool) -> Result<PathBuf, String> {
+    let dir = key_cache_root()?.join(tool.as_str());
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
+    let bundle = dir.join(source_release_key_name(tool));
+
+    if bundle.is_file() {
+        println!(
+            "keys: using cached {tool} release key bundle {}",
+            bundle.display()
+        );
+    } else {
+        println!(
+            "keys: missing {tool} release key bundle {}",
+            bundle.display()
+        );
+        let url = source_release_key_url(tool);
+        println!(
+            "keys: downloading {tool} release key bundle to {}",
+            bundle.display()
+        );
+        download_to_file(&url, &bundle)
+            .map_err(|err| format!("failed to download {tool} release key bundle: {err}"))?;
+    }
+
+    println!(
+        "keys: importing {tool} release key bundle {}",
+        bundle.display()
+    );
+    let status = Command::new("gpg")
+        .arg("--import")
+        .arg(&bundle)
+        .status()
+        .map_err(|e| format!("failed to run gpg to import {tool} release keys: {e}"))?;
+    if !status.success() {
+        return Err(format!(
+            "failed to import {tool} release key bundle {}",
+            bundle.display()
+        ));
+    }
+
+    Ok(bundle)
 }
 
 fn source_archive_name(url: &str) -> Result<String, String> {

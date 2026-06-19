@@ -82,15 +82,20 @@ eval "$(cvm use llvm 21)"
 cvm builds LLVM and GCC from source. On Debian and Ubuntu systems the backend
 scripts bootstrap required packages with `sudo apt install`.
 
-Starting with `v0.0.6`, cvm verifies downloaded LLVM and GCC source archives
-with GPG detached signatures before building. Install `gpg` and import the
-relevant upstream release keys before running `cvm install`.
+Starting with `v0.0.7`, cvm verifies downloaded LLVM and GCC source archives
+with GPG detached signatures before building. cvm downloads the upstream key
+bundle into `$CVM_HOME/cache/keys/<tool>/`, imports it with `gpg`, and then
+verifies the source archive.
 
 If dependency installation fails:
 
 - Confirm the user can run `sudo`.
 - Confirm apt repositories are reachable through your proxy or mirror.
-- Confirm `gpg --verify <archive>.sig <archive>` works for the upstream source
+- In minimal root containers, confirm `apt` exists; `sudo` is not required when
+  running as root.
+- Confirm `gpg` is installed. Minimal containers may omit it.
+- Confirm the upstream key bundle exists under `$CVM_HOME/cache/keys/<tool>/`
+  and `gpg --verify <archive>.sig <archive>` works for the upstream source
   archive.
 - Re-run the failing `cvm install ... --dry-run` command to inspect the backend
   script invocation.

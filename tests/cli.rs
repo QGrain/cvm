@@ -105,6 +105,18 @@ fn write_install_index(home: &Path, tool: &str, version: &str) -> (String, PathB
     (index_url, archive)
 }
 
+fn write_release_key_fixture(home: &Path, tool: &str) -> (String, String) {
+    let (env_key, name) = match tool {
+        "llvm" => ("CVM_LLVM_RELEASE_KEYS_URL", "release-keys.asc"),
+        "gcc" => ("CVM_GCC_RELEASE_KEYS_URL", "gnu-keyring.gpg"),
+        _ => panic!("unsupported tool"),
+    };
+    (
+        env_key.to_string(),
+        write_fixture(home, name, &format!("{tool} release key")),
+    )
+}
+
 fn fake_bash_path(home: &Path) -> String {
     let fake_bin = home.join("fake-bin");
     fs::create_dir_all(&fake_bin).unwrap();
@@ -179,7 +191,7 @@ touch "$prefix/bin/gcc" "$prefix/bin/g++" "$prefix/bin/clang" "$prefix/bin/clang
         format!(
             r#"#!/bin/bash
 set -e
-printf '%s\n' "$@" > "{}"
+printf '%s\n' "$@" >> "{}"
 exit 0
 "#,
             gpg_log.display()
@@ -282,11 +294,16 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
     );
     let log = home.join("bash-args.log");
     let path = fake_bash_path_with_log(&home, &log);
+    let (key_env, key_url) = write_release_key_fixture(&home, "llvm");
 
     let first = run_with_env(
         &home,
         &["install", "llvm", "21", "-j1"],
-        &[("CVM_REMOTE_INDEX_URL", &index_url), ("PATH", &path)],
+        &[
+            ("CVM_REMOTE_INDEX_URL", &index_url),
+            (&key_env, &key_url),
+            ("PATH", &path),
+        ],
     );
     assert!(first.status.success());
 
@@ -308,7 +325,11 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
     let second = run_with_env(
         &home,
         &["install", "llvm", "21", "-j1"],
-        &[("CVM_REMOTE_INDEX_URL", &index_url), ("PATH", &path)],
+        &[
+            ("CVM_REMOTE_INDEX_URL", &index_url),
+            (&key_env, &key_url),
+            ("PATH", &path),
+        ],
     );
     assert!(second.status.success());
     assert!(
@@ -317,6 +338,54 @@ fn install_reuses_cached_source_archive_and_passes_archive_to_backend() {
     assert!(
         String::from_utf8_lossy(&second.stdout).contains("verify: llvm 21.1.8 source signature OK")
     );
+}
+
+#[test]
+fn install_downloads_imports_and_reuses_release_key_bundle_before_verifying_source() {
+    let home = cvm_home("install-key-bundle");
+    let (index_url, _archive) = write_install_index(&home, "llvm", "21.1.8");
+    let key_url = write_fixture(&home, "release-keys.asc", "release key");
+    let log = home.join("bash-args.log");
+    let path = fake_bash_path_with_log(&home, &log);
+
+    let first = run_with_env(
+        &home,
+        &["install", "llvm", "21", "-j1"],
+        &[
+            ("CVM_REMOTE_INDEX_URL", &index_url),
+            ("CVM_LLVM_RELEASE_KEYS_URL", &key_url),
+            ("PATH", &path),
+        ],
+    );
+    assert!(first.status.success());
+    let stdout = String::from_utf8_lossy(&first.stdout);
+    let cached_key = home.join("cache/keys/llvm/release-keys.asc");
+    assert!(cached_key.exists());
+    assert!(stdout.contains("keys: missing llvm release key bundle"));
+    assert!(stdout.contains("keys: downloading llvm release key bundle"));
+    assert!(stdout.contains(&cached_key.display().to_string()));
+    assert!(stdout.contains("keys: importing llvm release key bundle"));
+    assert!(stdout.contains("verify: llvm 21.1.8 source signature OK"));
+
+    let gpg_args = fs::read_to_string(home.join("gpg-args.log")).unwrap();
+    let import_pos = gpg_args.find("--import").unwrap();
+    let verify_pos = gpg_args.find("--verify").unwrap();
+    assert!(import_pos < verify_pos);
+    assert!(gpg_args.contains(&cached_key.display().to_string()));
+
+    let second = run_with_env(
+        &home,
+        &["install", "llvm", "21", "-j1"],
+        &[
+            ("CVM_REMOTE_INDEX_URL", &index_url),
+            ("CVM_LLVM_RELEASE_KEYS_URL", &key_url),
+            ("PATH", &path),
+        ],
+    );
+    assert!(second.status.success());
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(stdout.contains("keys: using cached llvm release key bundle"));
+    assert!(stdout.contains("keys: importing llvm release key bundle"));
 }
 
 #[test]
@@ -664,11 +733,16 @@ fn install_sets_default_when_first_managed_version_is_installed() {
     let home = cvm_home("install-default");
     let path = fake_bash_path(&home);
     let (index_url, _archive) = write_install_index(&home, "gcc", "15.1.0");
+    let (key_env, key_url) = write_release_key_fixture(&home, "gcc");
 
     let output = run_with_env(
         &home,
         &["install", "gcc", "15", "-j1"],
-        &[("PATH", &path), ("CVM_REMOTE_INDEX_URL", &index_url)],
+        &[
+            ("PATH", &path),
+            ("CVM_REMOTE_INDEX_URL", &index_url),
+            (&key_env, &key_url),
+        ],
     );
 
     assert!(output.status.success());
@@ -687,6 +761,7 @@ fn install_does_not_override_existing_default_or_custom_prefix() {
     let path = fake_bash_path(&home);
     let (index_15, _archive_15) = write_install_index(&home, "gcc", "15.1.0");
     let (index_13, _archive_13) = write_install_index(&home, "gcc", "13.3.0");
+    let (key_env, key_url) = write_release_key_fixture(&home, "gcc");
     mark_installed(&home, "gcc", "14.2.0");
     assert!(run(&home, &["alias", "default", "gcc", "14.2.0"])
         .status
@@ -695,7 +770,11 @@ fn install_does_not_override_existing_default_or_custom_prefix() {
     let output = run_with_env(
         &home,
         &["install", "gcc", "15", "-j1"],
-        &[("PATH", &path), ("CVM_REMOTE_INDEX_URL", &index_15)],
+        &[
+            ("PATH", &path),
+            ("CVM_REMOTE_INDEX_URL", &index_15),
+            (&key_env, &key_url),
+        ],
     );
     assert!(output.status.success());
     assert_eq!(
@@ -709,7 +788,11 @@ fn install_does_not_override_existing_default_or_custom_prefix() {
     let output = run_with_env(
         &home,
         &["install", "gcc", "13", "--prefix", custom.to_str().unwrap()],
-        &[("PATH", &path), ("CVM_REMOTE_INDEX_URL", &index_13)],
+        &[
+            ("PATH", &path),
+            ("CVM_REMOTE_INDEX_URL", &index_13),
+            (&key_env, &key_url),
+        ],
     );
     assert!(output.status.success());
     assert_eq!(

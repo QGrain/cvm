@@ -39,6 +39,18 @@ Set `PROFILE=/dev/null` to skip profile edits.
 Running the installer again replaces only the cvm binary and regenerates
 `cvm.sh`; installed toolchains and defaults under `$HOME/.cvm` are preserved.
 
+`cvm install llvm ...` and `cvm install gcc ...` download the upstream release
+key bundle into `$CVM_HOME/cache/keys`, import it with `gpg`, and verify source
+archives with detached GPG signatures before building. The `install.sh`
+bootstrapper does not verify cvm release assets automatically; users who want
+to audit the bootstrap binary can manually verify the matching `.sig` asset
+from the GitHub Release.
+
+Compiler source builds bootstrap Debian/Ubuntu build dependencies with `apt`.
+When cvm is not running as root, the backend scripts use `sudo apt update` and
+`sudo apt install`; in root containers they call `apt` directly. Review the
+backend scripts before running `cvm install` in locked-down environments.
+
 ## Quick Start
 
 ```sh

@@ -90,9 +90,14 @@ Release notes should stay concise and include:
 - `Documentation`, when user-facing docs changed
 - `Verifying Packages`, when release assets have `.sig` files
 
-The `Verifying Packages` section should show users how to download the cvm
-release signing key, import it with `gpg`, download the matching asset and
-`.sig`, and run `gpg --verify <asset>.sig <asset>`.
+The `Verifying Packages` section should distinguish compiler source
+verification from cvm release asset verification. `cvm install llvm ...` and
+`cvm install gcc ...` download and import upstream release key bundles, then
+verify upstream source signatures automatically. The `install.sh` bootstrapper
+does not verify cvm release assets automatically, so the section should show
+users how to download the cvm release signing key, import it with `gpg`,
+download the matching asset and `.sig`, and run
+`gpg --verify <asset>.sig <asset>`.
 
 ## CI Expectations
 

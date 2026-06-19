@@ -50,10 +50,12 @@ invokes it with a versioned install prefix.
 ## Source Cache
 
 `cvm install` downloads compiler source archives and detached `.sig` files into
-`$CVM_HOME/cache/sources/<tool>/<version>/`, verifies the source archive with
-`gpg --verify`, and passes the cached archive to the backend script. Backend
-scripts still support direct standalone use; when run outside cvm, they
-download sources into the current directory as before.
+`$CVM_HOME/cache/sources/<tool>/<version>/`. It also caches upstream release key
+bundles under `$CVM_HOME/cache/keys/<tool>/`, imports the key bundle with
+`gpg --import`, verifies the source archive with `gpg --verify`, and passes the
+cached archive to the backend script. Backend scripts still support direct
+standalone use; when run outside cvm, they download sources into the current
+directory as before.
 
 The cache uses lazy pruning with a default 14-day lifetime. cvm does not install
 cron jobs or background services. Cache pruning never removes installed

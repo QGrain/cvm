@@ -33,6 +33,11 @@ asset with the same name plus `.sig`.
 tag. If no asset is available, it downloads the tagged source archive and builds
 cvm locally with Cargo.
 
+The installer does not verify release asset signatures automatically. Users who
+need to audit the bootstrap binary can manually download the release asset and
+its matching `.sig` file, import the cvm release signing key, and run
+`gpg --verify`.
+
 Re-running the installer replaces `$CVM_HOME/bin/cvm` and regenerates
 `$CVM_HOME/cvm.sh`. It does not remove installed toolchains or defaults.
 
@@ -93,7 +98,11 @@ See [Release Signing](signing.md) for key generation and secret setup.
 
 ## Verifying Packages
 
-Download the cvm release signing key, import it, then verify the asset:
+`cvm install llvm ...` and `cvm install gcc ...` automatically download and
+import the upstream release key bundle, then verify source archive signatures
+before building. To manually verify a cvm release asset before using
+`install.sh`, download the cvm release signing key, import it, then verify the
+asset:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/QGrain/cvm/vX.Y.Z/assets/keys/cvm-release-signing-key.asc
