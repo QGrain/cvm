@@ -88,7 +88,7 @@ cvm init
 cvm version
 ```
 
-交互式 shell source `$CVM_HOME/cvm.sh` 后，`cvm use ...` 会像 `nvm` 一样直接更新当前 shell。脚本或一次性 shell 中可以使用：
+交互式 shell source `$CVM_HOME/cvm.sh` 后，`cvm use ...` 会像 `nvm` 一样直接更新当前 shell。该 shell loader 也会在 shell 支持时注册 bash/zsh completion。脚本或一次性 shell 中可以使用：
 
 ```sh
 eval "$(cvm use llvm 21)"

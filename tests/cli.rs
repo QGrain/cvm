@@ -229,6 +229,7 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
     assert!(help.contains("cvm which <llvm|gcc> [version-or-prefix]"));
     assert!(help.contains("cvm upgrade [version] [--dry-run]"));
     assert!(help.contains("cvm alias default <llvm|gcc> <version-or-prefix>"));
+    assert!(!help.contains("cvm completion <bash|zsh>"));
     assert!(!help.contains("--source"));
     assert!(!help.contains("--minimal"));
     assert!(!help.contains("NAME_OR_PATH"));
@@ -421,6 +422,34 @@ fn install_fails_when_source_signature_is_missing() {
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("failed to download source signature"));
+}
+
+#[test]
+fn completion_outputs_bash_and_zsh_scripts() {
+    let home = cvm_home("completion");
+
+    let bash = run(&home, &["completion", "bash"]);
+    assert!(bash.status.success());
+    let bash = String::from_utf8_lossy(&bash.stdout);
+    assert!(bash.contains("_cvm_complete()"));
+    assert!(bash.contains("complete -F _cvm_complete cvm"));
+    assert!(bash.contains(
+        "install cache profile ls-remote ls list use alias current env which uninstall upgrade init version help"
+    ));
+    assert!(!bash.contains(" version completion help"));
+    assert!(bash.contains("command cvm ls \"$tool\""));
+
+    let zsh = run(&home, &["completion", "zsh"]);
+    assert!(zsh.status.success());
+    let zsh = String::from_utf8_lossy(&zsh.stdout);
+    assert!(zsh.contains("#compdef cvm"));
+    assert!(zsh.contains("_cvm()"));
+    assert!(zsh.contains("compdef _cvm cvm"));
+    assert!(zsh.contains("command cvm ls \"$tool\""));
+
+    let invalid = run(&home, &["completion", "fish"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("usage: cvm completion <bash|zsh>"));
 }
 
 #[test]

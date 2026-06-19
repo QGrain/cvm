@@ -77,6 +77,25 @@ For one-off scripts, use:
 eval "$(cvm use llvm 21)"
 ```
 
+## Completion Not Loaded
+
+`cvm init` registers bash/zsh completion through `$CVM_HOME/cvm.sh`. If tab
+completion is not available, open a new shell or source the loader again:
+
+```sh
+. "$CVM_HOME/cvm.sh"
+```
+
+To inspect the generated completion scripts:
+
+```sh
+cvm completion bash
+cvm completion zsh
+```
+
+These commands only print shell code to stdout. They do not modify files or
+fetch network resources.
+
 ## Source Build Dependencies
 
 cvm builds LLVM and GCC from source. On Debian and Ubuntu systems the backend

@@ -71,6 +71,8 @@ fn init_script_loads_defaults_dynamically_and_wraps_use() {
     assert!(script.contains("eval \"$(command cvm use \"$@\")\""));
     assert!(script.contains("export PATH=\"$CVM_HOME/bin:$PATH\""));
     assert!(script.contains("command cvm env --defaults"));
+    assert!(script.contains("command cvm completion bash"));
+    assert!(script.contains("command cvm completion zsh"));
 }
 
 #[test]

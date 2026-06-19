@@ -98,7 +98,8 @@ cvm version
 ```
 
 In interactive shells that source `$CVM_HOME/cvm.sh`, `cvm use ...` updates the
-current shell like `nvm`. In scripts or one-off shells, use:
+current shell like `nvm`. The same shell loader registers bash/zsh completion
+when the shell supports it. In scripts or one-off shells, use:
 
 ```sh
 eval "$(cvm use llvm 21)"

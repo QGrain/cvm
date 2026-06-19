@@ -14,6 +14,8 @@ use serde::Deserialize;
 
 pub const CVM_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const COMPLETION_COMMANDS: &str =
+    "install cache profile ls-remote ls list use alias current env which uninstall upgrade init version help";
 const LLVM_BUILD_SCRIPT: &str = include_str!("../scripts/build_llvm-project.sh");
 const GCC_BUILD_SCRIPT: &str = include_str!("../scripts/build_gcc.sh");
 const DEFAULT_REMOTE_INDEX: &str = include_str!("../manifests/remote-index.json");
@@ -339,6 +341,12 @@ cvm() {
     command cvm "$@"
   fi
 }
+
+if [ -n "${BASH_VERSION:-}" ]; then
+  eval "$(command cvm completion bash)"
+elif [ -n "${ZSH_VERSION:-}" ]; then
+  eval "$(command cvm completion zsh)"
+fi
 "#,
     );
     script
@@ -409,6 +417,7 @@ pub fn run_cli_result(args: Vec<String>) -> Result<(), String> {
         "uninstall" => cmd_uninstall(&rest),
         "upgrade" => cmd_upgrade(&rest),
         "init" => cmd_init(&rest),
+        "completion" => cmd_completion(&rest),
         other => Err(format!("unknown command: {other}")),
     }
 }
@@ -974,6 +983,173 @@ fn cmd_init(args: &[String]) -> Result<(), String> {
     }
     print!("{}", init_script(&defaults));
     Ok(())
+}
+
+fn cmd_completion(args: &[String]) -> Result<(), String> {
+    if args.len() != 1 {
+        return Err("usage: cvm completion <bash|zsh>".into());
+    }
+    match args[0].as_str() {
+        "bash" => {
+            print!("{}", bash_completion_script());
+            Ok(())
+        }
+        "zsh" => {
+            print!("{}", zsh_completion_script());
+            Ok(())
+        }
+        _ => Err("usage: cvm completion <bash|zsh>".into()),
+    }
+}
+
+fn bash_completion_script() -> String {
+    format!(
+        r#"# cvm bash completion
+_cvm_installed_versions() {{
+  local tool="$1"
+  command cvm ls "$tool" 2>/dev/null | sed -n 's/^  default -> //p; t; s/^  \([^<].*\)$/\1/p'
+}}
+
+_cvm_complete() {{
+  local cur command tool
+  COMPREPLY=()
+  cur="${{COMP_WORDS[COMP_CWORD]}}"
+  command="${{COMP_WORDS[1]}}"
+
+  local commands="{commands}"
+  local tools="llvm gcc"
+
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    return 0
+  fi
+
+  case "$command" in
+    completion)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+      fi
+      ;;
+    cache)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "dir list prune" -- "$cur") )
+      elif [ "${{COMP_WORDS[2]}}" = "prune" ]; then
+        COMPREPLY=( $(compgen -W "--older-than" -- "$cur") )
+      fi
+      ;;
+    profile)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "template list" -- "$cur") )
+      elif [ "${{COMP_WORDS[2]}}" = "template" ] && [ "$COMP_CWORD" -eq 3 ]; then
+        COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
+      fi
+      ;;
+    install|ls-remote|ls|list|current)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
+      fi
+      ;;
+    use|env|which|uninstall)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
+      elif [ "$COMP_CWORD" -eq 3 ]; then
+        tool="${{COMP_WORDS[2]}}"
+        COMPREPLY=( $(compgen -W "$(_cvm_installed_versions "$tool")" -- "$cur") )
+      fi
+      ;;
+    alias)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "default" -- "$cur") )
+      elif [ "$COMP_CWORD" -eq 3 ] && [ "${{COMP_WORDS[2]}}" = "default" ]; then
+        COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
+      elif [ "$COMP_CWORD" -eq 4 ] && [ "${{COMP_WORDS[2]}}" = "default" ]; then
+        tool="${{COMP_WORDS[3]}}"
+        COMPREPLY=( $(compgen -W "$(_cvm_installed_versions "$tool")" -- "$cur") )
+      fi
+      ;;
+  esac
+  return 0
+}}
+
+if command -v complete >/dev/null 2>&1; then
+  complete -F _cvm_complete cvm
+fi
+"#,
+        commands = COMPLETION_COMMANDS
+    )
+}
+
+fn zsh_completion_script() -> String {
+    format!(
+        r#"#compdef cvm
+# cvm zsh completion
+
+_cvm_installed_versions() {{
+  local tool="$1"
+  command cvm ls "$tool" 2>/dev/null | sed -n 's/^  default -> //p; t; s/^  \([^<].*\)$/\1/p'
+}}
+
+_cvm() {{
+  local -a commands tools cache_commands profile_commands shells versions
+  commands=({commands})
+  tools=(llvm gcc)
+  cache_commands=(dir list prune)
+  profile_commands=(template list)
+  shells=(bash zsh)
+
+  if (( CURRENT == 2 )); then
+    compadd -- $commands
+    return
+  fi
+
+  case "$words[2]" in
+    completion)
+      if (( CURRENT == 3 )); then compadd -- $shells; fi
+      ;;
+    cache)
+      if (( CURRENT == 3 )); then
+        compadd -- $cache_commands
+      elif [[ "$words[3]" == prune ]]; then
+        compadd -- --older-than
+      fi
+      ;;
+    profile)
+      if (( CURRENT == 3 )); then
+        compadd -- $profile_commands
+      elif [[ "$words[3]" == template && CURRENT == 4 ]]; then
+        compadd -- $tools
+      fi
+      ;;
+    install|ls-remote|ls|list|current)
+      if (( CURRENT == 3 )); then compadd -- $tools; fi
+      ;;
+    use|env|which|uninstall)
+      if (( CURRENT == 3 )); then
+        compadd -- $tools
+      elif (( CURRENT == 4 )); then
+        versions=(${{(f)"$(_cvm_installed_versions "$words[3]")"}})
+        compadd -- $versions
+      fi
+      ;;
+    alias)
+      if (( CURRENT == 3 )); then
+        compadd -- default
+      elif [[ "$words[3]" == default && CURRENT == 4 ]]; then
+        compadd -- $tools
+      elif [[ "$words[3]" == default && CURRENT == 5 ]]; then
+        versions=(${{(f)"$(_cvm_installed_versions "$words[4]")"}})
+        compadd -- $versions
+      fi
+      ;;
+  esac
+}}
+
+if whence -w compdef >/dev/null 2>&1; then
+  compdef _cvm cvm
+fi
+"#,
+        commands = COMPLETION_COMMANDS
+    )
 }
 
 fn list_aliases() -> Result<(), String> {
