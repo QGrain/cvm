@@ -2,7 +2,7 @@
 
 <h1>Compiler Version Manager</h1>
 
-<img src="https://img.shields.io/badge/version-v0.0.6-orange.svg" alt="Release Version"> <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License"> <img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status"> <img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
+<img src="https://img.shields.io/badge/version-v0.0.7-orange.svg" alt="Release Version"> <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License"> <img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status"> <img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
 
 [[中文]](README_CN.md)
 
@@ -21,7 +21,7 @@ switching.
 Install the latest release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.6/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.7/install.sh | bash
 ```
 
 Install from a local checkout:
