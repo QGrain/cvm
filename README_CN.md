@@ -2,7 +2,7 @@
 
 <h1>Compiler Version Manager</h1>
 
-<img src="https://img.shields.io/badge/version-v0.0.7-orange.svg" alt="Release Version"> <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License"> <img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status"> <img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
+<img src="https://img.shields.io/badge/version-v0.0.8-orange.svg" alt="Release Version"> <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License"> <img src="https://img.shields.io/github/actions/workflow/status/QGrain/cvm/release.yml" alt="Release Workflow Status"> <img src="https://img.shields.io/github/downloads/QGrain/cvm/total" alt="Total Downloads">
 
 [[English]](README.md)
 
@@ -17,7 +17,7 @@ cvm 面向 Linux 内核开发、syzkaller 工作流、编译器测试、CI，以
 安装最新的 release：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.7/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.8/install.sh | bash
 ```
 
 从本地 checkout 安装：

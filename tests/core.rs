@@ -95,7 +95,7 @@ fn parses_remote_index_versions_dates_and_urls() {
 {
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.0.7"},
+  "cvm": {"latest": "v0.0.8"},
   "compilers": {
     "gcc": [
       {"version": "14.2.0", "date": "2024-08-01", "url": "https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"},
@@ -111,7 +111,7 @@ fn parses_remote_index_versions_dates_and_urls() {
 
     assert_eq!(
         parse_remote_index_latest(index).unwrap().to_string(),
-        "0.0.7"
+        "0.0.8"
     );
 
     let gcc = parse_remote_index_versions(index, Tool::Gcc).unwrap();
