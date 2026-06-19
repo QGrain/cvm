@@ -6,15 +6,19 @@
 
 [[中文]](README_CN.md)
 
-`cvm` is a per-user compiler version manager for LLVM and GCC.
+`cvm` is a cross-platform C/C++ compiler version manager for LLVM and GCC.
 
-It installs compiler toolchains from source, switches the active compiler in
-the current shell, records persistent defaults, and keeps system compilers
-untouched.
+Inspired by tools like nvm, rustup, and rbenv, cvm lets you install multiple
+compiler toolchain versions, switch the active compiler in the current shell,
+and set persistent defaults without overwriting system compilers.
+
+cvm is designed for Linux kernel development, syzkaller workflows, compiler
+testing, CI, and any C/C++ project that needs reproducible LLVM or GCC version
+switching.
 
 ## Installation
 
-Install a release:
+Install the latest release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.5/install.sh | bash

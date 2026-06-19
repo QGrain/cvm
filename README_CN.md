@@ -6,13 +6,15 @@
 
 [[English]](README.md)
 
-`cvm` 是一个面向 LLVM 和 GCC 的用户级编译器版本管理工具。
+`cvm` 是一个面向 LLVM 和 GCC 的跨平台 C/C++ 编译器版本管理工具。
 
-它从源码安装编译器工具链，在当前 shell 中切换编译器版本，记录持久默认版本，并且不会替换系统编译器。
+受 nvm、rustup 和 rbenv 这类工具启发，cvm 可以安装多个编译器工具链版本，在当前 shell 中切换活跃编译器，设置持久默认版本，并且不会覆盖系统编译器。
+
+cvm 面向 Linux 内核开发、syzkaller 工作流、编译器测试、CI，以及任何需要可复现切换 LLVM 或 GCC 版本的 C/C++ 项目。
 
 ## 安装
 
-安装指定 release：
+安装最新的 release：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.0.5/install.sh | bash
