@@ -47,6 +47,16 @@ on_error() {
 }
 trap 'on_error $LINENO' ERR
 
+run_as_root() {
+	if ((EUID == 0)); then
+		"$@"
+	elif command -v sudo >/dev/null 2>&1; then
+		sudo "$@"
+	else
+		die "sudo is required to install Debian/Ubuntu build dependencies"
+	fi
+}
+
 version_ge() {
 	local lhs=$1 rhs=$2
 	local lhs_core=${lhs%%-rc*} rhs_core=${rhs%%-rc*}
@@ -148,8 +158,8 @@ if [[ -z $jobs ]]; then
 	((jobs >= 1)) || jobs=1
 fi
 
-sudo apt update
-sudo apt install -y cmake ninja-build libedit-dev python3-dev swig wget xz-utils
+run_as_root apt update
+run_as_root apt install -y cmake ninja-build libedit-dev python3-dev swig wget xz-utils
 
 cwd=$(pwd -P)
 prefix=${prefix:-"${cwd}/llvm-project-${version}.install"}

@@ -47,6 +47,10 @@ Compiler source builds are delegated to embedded backend scripts:
 At runtime, cvm materializes the selected backend under `$CVM_HOME/scripts` and
 invokes it with a versioned install prefix.
 
+Backend scripts bootstrap Debian/Ubuntu build dependencies with `apt`. They run
+`apt` directly as root and use `sudo` only for non-root users. This keeps fresh
+containers usable while making privilege elevation explicit.
+
 ## Source Cache
 
 `cvm install` downloads compiler source archives and detached `.sig` files into

@@ -80,7 +80,9 @@ eval "$(cvm use llvm 21)"
 ## Source Build Dependencies
 
 cvm builds LLVM and GCC from source. On Debian and Ubuntu systems the backend
-scripts bootstrap required packages with `sudo apt install`.
+scripts bootstrap required packages with `apt`. Root containers call `apt`
+directly. Non-root users need `sudo` because the scripts run `sudo apt update`
+and `sudo apt install`.
 
 Starting with `v0.0.7`, cvm verifies downloaded LLVM and GCC source archives
 with GPG detached signatures before building. cvm downloads the upstream key

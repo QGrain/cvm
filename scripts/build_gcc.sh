@@ -42,6 +42,16 @@ on_error() {
 }
 trap 'on_error $LINENO' ERR
 
+run_as_root() {
+	if ((EUID == 0)); then
+		"$@"
+	elif command -v sudo >/dev/null 2>&1; then
+		sudo "$@"
+	else
+		die "sudo is required to install Debian/Ubuntu build dependencies"
+	fi
+}
+
 validate_version() {
 	[[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must be X.Y.Z: $1"
 }
@@ -116,8 +126,8 @@ gcc_bootstrap="${CVM_GCC_BOOTSTRAP:-false}"
 [[ $gcc_multilib == "true" || $gcc_multilib == "false" ]] || die "CVM_GCC_MULTILIB must be true or false"
 [[ $gcc_bootstrap == "true" || $gcc_bootstrap == "false" ]] || die "CVM_GCC_BOOTSTRAP must be true or false"
 
-sudo apt update
-sudo apt install -y build-essential flex bison texinfo wget xz-utils
+run_as_root apt update
+run_as_root apt install -y build-essential flex bison texinfo wget xz-utils
 
 cwd=$(pwd -P)
 src_dir="gcc-${version}"

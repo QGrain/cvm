@@ -11,7 +11,8 @@ fn llvm_script_has_safe_defaults_and_expected_options() {
     assert!(script.contains("CVM_LLVM_CMAKE_DEFINES"));
     assert!(script.contains("clang;lld;compiler-rt"));
     assert!(script.contains("llvm-project-${VERSION}.install"));
-    assert!(script.contains("sudo apt install -y"));
+    assert!(script.contains("run_as_root apt install -y"));
+    assert!(script.contains("sudo \"$@\""));
     assert!(script.contains("rm -rf \"$src_dir\""));
     assert!(script.contains("[[ -z $archive_input ]]"));
     assert!(script.contains("Examples:"));
@@ -31,7 +32,8 @@ fn gcc_script_is_kernel_oriented() {
     assert!(script.contains("contrib/download_prerequisites"));
     assert!(script.contains("--disable-multilib"));
     assert!(script.contains("gcc-${VERSION}.install"));
-    assert!(script.contains("sudo apt install -y"));
+    assert!(script.contains("run_as_root apt install -y"));
+    assert!(script.contains("sudo \"$@\""));
     assert!(script.contains("rm -rf \"$src_dir\""));
     assert!(script.contains("[[ -z $archive_input ]]"));
     assert!(script.contains("Examples:"));
