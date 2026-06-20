@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 repo="${CVM_REPO:-QGrain/cvm}"
 cvm_latest_version() {
-	printf '%s\n' "v0.0.8"
+	printf '%s\n' "v0.1.0"
 }
 
 version="${CVM_VERSION:-$(cvm_latest_version)}"

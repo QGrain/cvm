@@ -63,7 +63,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z: short release theme"
 git push origin vX.Y.Z
 ```
 
-Use the GitHub release title as the tag only, for example `v0.0.8`. Put the
+Use the GitHub release title as the tag only, for example `v0.1.0`. Put the
 release theme and details in the release note body.
 
 ## Signing Setup
