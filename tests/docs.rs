@@ -56,6 +56,8 @@ fn agent_and_logo_assets_exist() {
     assert_eq!(claude_target, std::path::PathBuf::from("AGENTS.md"));
     assert!(agents.contains("cvm Coding Agent Instructions"));
     assert!(agents.contains("Build Backends"));
+    assert!(agents.contains("docs/TODOs.md"));
+    assert!(fs::metadata("docs/TODOs.md").unwrap().is_file());
     assert!(fs::metadata("assets/logos/cvm-logo-color.svg")
         .unwrap()
         .is_file());

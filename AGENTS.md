@@ -25,6 +25,9 @@ to `$HOME/.cvm`.
   and core parsing.
 - `docs/`: design, release, troubleshooting, build profile, and contribution
   documentation.
+- `docs/TODOs.md`: discussed future ideas. Consult it during roadmap or
+  brainstorming work, but do not treat it as the only source of possible
+  improvements.
 
 ## Command Model
 
