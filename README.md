@@ -64,6 +64,8 @@ cvm cache list
 cvm use llvm 21
 cvm which llvm
 cvm alias default llvm 21.1.8
+cvm use system
+cvm deactivate
 
 cvm version
 cvm upgrade --dry-run
@@ -86,12 +88,13 @@ cvm profile template <llvm|gcc> [PATH] [--force]
 cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
-cvm use <llvm|gcc> [version-or-prefix]
+cvm use <llvm|gcc|system> [version-or-prefix]
 cvm alias default <llvm|gcc> <version-or-prefix>
 cvm current [llvm|gcc]
 cvm env <llvm|gcc> [version-or-prefix]
 cvm which <llvm|gcc> [version-or-prefix]
 cvm uninstall <llvm|gcc> <version-or-prefix>
+cvm deactivate
 cvm upgrade [version] [--dry-run]
 cvm init
 cvm version
@@ -99,10 +102,13 @@ cvm version
 
 In interactive shells that source `$CVM_HOME/cvm.sh`, `cvm use ...` updates the
 current shell like `nvm`. The same shell loader registers bash/zsh completion
-when the shell supports it. In scripts or one-off shells, use:
+when the shell supports it. `cvm use system` and `cvm deactivate` return the
+current shell to system compiler resolution without changing persistent
+defaults. In scripts or one-off shells, use:
 
 ```sh
 eval "$(cvm use llvm 21)"
+eval "$(cvm use system)"
 ```
 
 ## Documentation

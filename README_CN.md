@@ -56,6 +56,8 @@ cvm cache list
 cvm use llvm 21
 cvm which llvm
 cvm alias default llvm 21.1.8
+cvm use system
+cvm deactivate
 
 cvm version
 cvm upgrade --dry-run
@@ -77,21 +79,23 @@ cvm profile template <llvm|gcc> [PATH] [--force]
 cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
-cvm use <llvm|gcc> [version-or-prefix]
+cvm use <llvm|gcc|system> [version-or-prefix]
 cvm alias default <llvm|gcc> <version-or-prefix>
 cvm current [llvm|gcc]
 cvm env <llvm|gcc> [version-or-prefix]
 cvm which <llvm|gcc> [version-or-prefix]
 cvm uninstall <llvm|gcc> <version-or-prefix>
+cvm deactivate
 cvm upgrade [version] [--dry-run]
 cvm init
 cvm version
 ```
 
-交互式 shell source `$CVM_HOME/cvm.sh` 后，`cvm use ...` 会像 `nvm` 一样直接更新当前 shell。该 shell loader 也会在 shell 支持时注册 bash/zsh completion。脚本或一次性 shell 中可以使用：
+交互式 shell source `$CVM_HOME/cvm.sh` 后，`cvm use ...` 会像 `nvm` 一样直接更新当前 shell。该 shell loader 也会在 shell 支持时注册 bash/zsh completion。`cvm use system` 和 `cvm deactivate` 可以让当前 shell 临时回到系统编译器解析，但不会修改持久默认版本。脚本或一次性 shell 中可以使用：
 
 ```sh
 eval "$(cvm use llvm 21)"
+eval "$(cvm use system)"
 ```
 
 ## 文档

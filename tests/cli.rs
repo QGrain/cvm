@@ -227,6 +227,8 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
     assert!(help.contains("cvm cache dir"));
     assert!(help.contains("cvm ls-remote [llvm|gcc] [prefix]"));
     assert!(help.contains("cvm which <llvm|gcc> [version-or-prefix]"));
+    assert!(help.contains("cvm use <llvm|gcc|system> [version-or-prefix]"));
+    assert!(help.contains("cvm deactivate"));
     assert!(help.contains("cvm upgrade [version] [--dry-run]"));
     assert!(help.contains("cvm alias default <llvm|gcc> <version-or-prefix>"));
     assert!(!help.contains("cvm completion <bash|zsh>"));
@@ -434,9 +436,10 @@ fn completion_outputs_bash_and_zsh_scripts() {
     assert!(bash.contains("_cvm_complete()"));
     assert!(bash.contains("complete -F _cvm_complete cvm"));
     assert!(bash.contains(
-        "install cache profile ls-remote ls list use alias current env which uninstall upgrade init version help"
+        "install cache profile ls-remote ls list use alias current env which uninstall deactivate upgrade init version help"
     ));
     assert!(!bash.contains(" version completion help"));
+    assert!(bash.contains("compgen -W \"$tools system\""));
     assert!(bash.contains("command cvm ls \"$tool\""));
 
     let zsh = run(&home, &["completion", "zsh"]);
@@ -445,11 +448,62 @@ fn completion_outputs_bash_and_zsh_scripts() {
     assert!(zsh.contains("#compdef cvm"));
     assert!(zsh.contains("_cvm()"));
     assert!(zsh.contains("compdef _cvm cvm"));
+    assert!(zsh.contains("compadd -- $tools system"));
     assert!(zsh.contains("command cvm ls \"$tool\""));
 
     let invalid = run(&home, &["completion", "fish"]);
     assert!(!invalid.status.success());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("usage: cvm completion <bash|zsh>"));
+}
+
+#[test]
+fn deactivate_prints_system_env_without_clearing_defaults() {
+    let home = cvm_home("deactivate");
+    mark_installed(&home, "llvm", "21.1.8");
+    assert!(run(&home, &["alias", "default", "llvm", "21.1.8"])
+        .status
+        .success());
+
+    let output = run(&home, &["deactivate"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("_cvm_strip_toolchain_paths"));
+    assert!(stdout.contains("unset CC CXX LD LLVM HOSTCC HOSTCXX"));
+    assert!(!stdout.contains("export CC="));
+    assert_eq!(
+        fs::read_to_string(home.join("defaults/llvm"))
+            .unwrap()
+            .trim(),
+        "21.1.8"
+    );
+}
+
+#[test]
+fn use_system_accepts_optional_tool_and_does_not_require_installed_toolchains() {
+    let home = cvm_home("use-system");
+
+    let all = run(&home, &["use", "system"]);
+    assert!(all.status.success());
+    let stdout = String::from_utf8_lossy(&all.stdout);
+    assert!(stdout.contains("_cvm_strip_toolchain_paths"));
+    assert!(stdout.contains("unset CC CXX LD LLVM HOSTCC HOSTCXX"));
+
+    let llvm = run(&home, &["use", "system", "llvm"]);
+    assert!(llvm.status.success());
+    let stdout = String::from_utf8_lossy(&llvm.stdout);
+    assert!(stdout.contains("unset CC CXX LD LLVM"));
+    assert!(!stdout.contains("HOSTCC"));
+
+    let gcc = run(&home, &["use", "system", "gcc"]);
+    assert!(gcc.status.success());
+    let stdout = String::from_utf8_lossy(&gcc.stdout);
+    assert!(stdout.contains("unset CC CXX HOSTCC HOSTCXX"));
+    assert!(!stdout.contains(" LLVM "));
+
+    let invalid = run(&home, &["use", "system", "rust"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("usage: cvm use system [llvm|gcc]"));
 }
 
 #[test]

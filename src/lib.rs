@@ -15,7 +15,7 @@ use serde::Deserialize;
 pub const CVM_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const COMPLETION_COMMANDS: &str =
-    "install cache profile ls-remote ls list use alias current env which uninstall upgrade init version help";
+    "install cache profile ls-remote ls list use alias current env which uninstall deactivate upgrade init version help";
 const LLVM_BUILD_SCRIPT: &str = include_str!("../scripts/build_llvm-project.sh");
 const GCC_BUILD_SCRIPT: &str = include_str!("../scripts/build_gcc.sh");
 const DEFAULT_REMOTE_INDEX: &str = include_str!("../manifests/remote-index.json");
@@ -318,6 +318,15 @@ pub fn env_script(tool: Tool, prefix: &Path) -> String {
     }
 }
 
+fn system_env_script(tool: Option<Tool>) -> String {
+    let reset = match tool {
+        Some(Tool::Llvm) => "unset CC CXX LD LLVM\n",
+        Some(Tool::Gcc) => "unset CC CXX HOSTCC HOSTCXX\n",
+        None => managed_env_reset_script(),
+    };
+    format!("{}{reset}", strip_toolchain_paths_script())
+}
+
 pub fn init_script(_defaults: &[(Tool, Version, PathBuf)]) -> String {
     let mut script = String::new();
     script.push_str("# cvm shell integration\n");
@@ -415,6 +424,7 @@ pub fn run_cli_result(args: Vec<String>) -> Result<(), String> {
         "current" => cmd_current(&rest),
         "which" => cmd_which(&rest),
         "uninstall" => cmd_uninstall(&rest),
+        "deactivate" => cmd_deactivate(&rest),
         "upgrade" => cmd_upgrade(&rest),
         "init" => cmd_init(&rest),
         "completion" => cmd_completion(&rest),
@@ -807,7 +817,20 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
 
 fn cmd_use(args: &[String]) -> Result<(), String> {
     if args.is_empty() {
-        return Err("usage: cvm use <llvm|gcc> [version-or-prefix]".into());
+        return Err("usage: cvm use <llvm|gcc|system> [version-or-prefix]".into());
+    }
+    if args[0] == "system" {
+        if args.len() > 2 {
+            return Err("usage: cvm use system [llvm|gcc]".into());
+        }
+        let tool = match args.get(1).map(String::as_str) {
+            Some("llvm") => Some(Tool::Llvm),
+            Some("gcc") => Some(Tool::Gcc),
+            Some(_) => return Err("usage: cvm use system [llvm|gcc]".into()),
+            None => None,
+        };
+        print!("{}", system_env_script(tool));
+        return Ok(());
     }
     let tool = Tool::from_str(&args[0])?;
     let version = resolve_requested_version(tool, args.get(1).map(String::as_str))?;
@@ -841,6 +864,14 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
     let prefix = install_prefix(spec.tool, &spec.version)?;
     ensure_installed(spec.tool, &spec.version, &prefix)?;
     print!("{}", env_script(spec.tool, &prefix));
+    Ok(())
+}
+
+fn cmd_deactivate(args: &[String]) -> Result<(), String> {
+    if !args.is_empty() {
+        return Err("usage: cvm deactivate".into());
+    }
+    print!("{}", system_env_script(None));
     Ok(())
 }
 
@@ -1049,7 +1080,17 @@ _cvm_complete() {{
         COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
       fi
       ;;
-    use|env|which|uninstall)
+    use)
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        COMPREPLY=( $(compgen -W "$tools system" -- "$cur") )
+      elif [ "$COMP_CWORD" -eq 3 ] && [ "${{COMP_WORDS[2]}}" = "system" ]; then
+        COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
+      elif [ "$COMP_CWORD" -eq 3 ]; then
+        tool="${{COMP_WORDS[2]}}"
+        COMPREPLY=( $(compgen -W "$(_cvm_installed_versions "$tool")" -- "$cur") )
+      fi
+      ;;
+    env|which|uninstall)
       if [ "$COMP_CWORD" -eq 2 ]; then
         COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
       elif [ "$COMP_CWORD" -eq 3 ]; then
@@ -1123,7 +1164,17 @@ _cvm() {{
     install|ls-remote|ls|list|current)
       if (( CURRENT == 3 )); then compadd -- $tools; fi
       ;;
-    use|env|which|uninstall)
+    use)
+      if (( CURRENT == 3 )); then
+        compadd -- $tools system
+      elif [[ "$words[3]" == system && CURRENT == 4 ]]; then
+        compadd -- $tools
+      elif (( CURRENT == 4 )); then
+        versions=(${{(f)"$(_cvm_installed_versions "$words[3]")"}})
+        compadd -- $versions
+      fi
+      ;;
+    env|which|uninstall)
       if (( CURRENT == 3 )); then
         compadd -- $tools
       elif (( CURRENT == 4 )); then
@@ -2187,12 +2238,13 @@ fn print_help() {
            cvm profile list\n\
            cvm ls-remote [llvm|gcc] [prefix]\n\
            cvm ls [llvm|gcc]\n\
-           cvm use <llvm|gcc> [version-or-prefix]\n\
+           cvm use <llvm|gcc|system> [version-or-prefix]\n\
            cvm alias default <llvm|gcc> <version-or-prefix>\n\
            cvm current [llvm|gcc]\n\
            cvm env <llvm|gcc> [version-or-prefix]\n\
            cvm which <llvm|gcc> [version-or-prefix]\n\
            cvm uninstall <llvm|gcc> <version-or-prefix>\n\
+           cvm deactivate\n\
            cvm upgrade [version] [--dry-run]\n\
            cvm init\n\
            cvm version\n\n\
@@ -2206,6 +2258,8 @@ fn print_help() {
            cvm install llvm 21 --profile ./llvm-custom.toml\n\
            cvm ls-remote llvm 21\n\
            eval \"$(cvm use llvm 21)\"\n\
+           cvm use system\n\
+           cvm deactivate\n\
            cvm which llvm\n\
            cvm alias default llvm 21.1.8\n\
            cvm upgrade --dry-run\n\

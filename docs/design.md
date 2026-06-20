@@ -29,6 +29,11 @@ write files, install packages, or fetch network resources.
 This avoids pointing `PATH` at missing toolchains and silently falling back to
 system compilers.
 
+`cvm use system` and `cvm deactivate` are temporary shell operations. They strip
+cvm-managed toolchain `bin` directories from `PATH` and clear cvm-managed
+compiler variables, but they do not modify persistent defaults under
+`$CVM_HOME/defaults`.
+
 When switching versions, cvm clears the compiler variables it owns:
 `CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, and `HOSTCXX`. It does not clear unrelated
 user-managed variables such as `CROSS_COMPILE`.

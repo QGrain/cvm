@@ -37,7 +37,9 @@ Primary user commands include:
 - `cvm cache dir`
 - `cvm cache list`
 - `cvm cache prune [--older-than 14d]`
-- `cvm use <llvm|gcc> [version-or-prefix]`
+- `cvm use <llvm|gcc|system> [version-or-prefix]`
+- `cvm use system [llvm|gcc]`
+- `cvm deactivate`
 - `cvm env <llvm|gcc> [version-or-prefix]`
 - `cvm alias default <llvm|gcc> <version-or-prefix>`
 - `cvm ls [llvm|gcc]`
@@ -52,6 +54,8 @@ Primary user commands include:
 
 Interactive shells source `$CVM_HOME/cvm.sh`, which wraps `cvm use` so it can
 modify the current shell. Scripts can use `eval "$(cvm use llvm 21)"`.
+`cvm use system` and `cvm deactivate` are temporary shell operations and must
+not remove persistent defaults.
 
 ## Build Backends
 

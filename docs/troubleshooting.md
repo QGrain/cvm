@@ -61,6 +61,21 @@ cvm which gcc
 If system compilers are still selected, ensure the cvm profile snippet appears
 after other PATH setup in your shell profile.
 
+To temporarily return the current shell to system compiler resolution, run:
+
+```sh
+cvm use system
+```
+
+or:
+
+```sh
+cvm deactivate
+```
+
+These commands do not remove persistent defaults. Opening a new shell will
+apply any configured `cvm alias default ...` entries again.
+
 ## Profile Not Loaded
 
 If `cvm use ...` prints shell code instead of switching the current shell, the
