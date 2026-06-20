@@ -43,14 +43,14 @@ python3 -m json.tool manifests/remote-index.json
 For small releases, a single release-focused commit is acceptable:
 
 ```text
-v0.0.X: short release-focused summary
+vX.Y.Z: short release-focused summary
 ```
 
 When a release contains multiple logical changes, split commits by concern.
 Keep pure version metadata in a dedicated bump commit:
 
 ```text
-bump: prepare v0.0.X release
+bump: prepare vX.Y.Z release
 ```
 
 That commit may include `Cargo.toml`, `Cargo.lock`, `install.sh`, README
@@ -74,14 +74,14 @@ changes in the same commit when they can be reviewed independently.
 Use the GitHub release title as the tag only:
 
 ```text
-v0.0.X
+vX.Y.Z
 ```
 
 Put the release theme in the annotated tag message and release note body, not
 in the GitHub release title:
 
 ```sh
-git tag -a v0.0.X -m "v0.0.X: short release theme"
+git tag -a vX.Y.Z -m "vX.Y.Z: short release theme"
 ```
 
 Release notes should stay concise and include:
@@ -96,8 +96,9 @@ verification from cvm release asset verification. `cvm install llvm ...` and
 verify upstream source signatures automatically. The `install.sh` bootstrapper
 does not verify cvm release assets automatically, so the section should show
 users how to download the cvm release signing key, import it with `gpg`,
-download the matching asset and `.sig`, and run
-`gpg --verify <asset>.sig <asset>`.
+download the matching asset and `.sig`, run
+`gpg --verify <asset>.sig <asset>`, extract the signed asset, and compare the
+extracted `cvm` binary with `${CVM_HOME:-$HOME/.cvm}/bin/cvm`.
 
 ## CI Expectations
 

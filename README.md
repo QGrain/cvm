@@ -44,7 +44,7 @@ key bundle into `$CVM_HOME/cache/keys`, import it with `gpg`, and verify source
 archives with detached GPG signatures before building. The `install.sh`
 bootstrapper does not verify cvm release assets automatically; users who want
 to audit the bootstrap binary can manually verify the matching `.sig` asset
-from the GitHub Release.
+from the GitHub Release and compare it with the installed binary.
 
 Compiler source builds bootstrap Debian/Ubuntu build dependencies with `apt`.
 When cvm is not running as root, the backend scripts use `sudo apt update` and

@@ -36,7 +36,7 @@ cd cvm
 下载到 `$CVM_HOME/cache/keys`，通过 `gpg` 导入，并在构建前使用 detached
 GPG 签名校验源码包。`install.sh` 引导安装器目前不会自动校验 cvm release
 asset；如果用户希望审计引导 binary，可以手动下载 GitHub Release 中对应的
-`.sig` asset 进行校验。
+`.sig` asset 进行校验，并与本地已安装的 binary 进行对比。
 
 源码构建会通过 `apt` 自动安装 Debian/Ubuntu 构建依赖。非 root 用户执行
 `cvm install` 时，后端脚本会调用 `sudo apt update` 和 `sudo apt install`；

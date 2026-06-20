@@ -100,15 +100,23 @@ See [Release Signing](signing.md) for key generation and secret setup.
 
 `cvm install llvm ...` and `cvm install gcc ...` automatically download and
 import the upstream release key bundle, then verify source archive signatures
-before building. To manually verify a cvm release asset before using
-`install.sh`, download the cvm release signing key, import it, then verify the
-asset:
+before building. `install.sh` does not automatically verify cvm release assets.
+To audit an installed cvm binary, verify the matching release asset and compare
+it with the local binary:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/QGrain/cvm/vX.Y.Z/assets/keys/cvm-release-signing-key.asc
-gpg --import cvm-release-signing-key.asc
-curl -fsSLO https://github.com/QGrain/cvm/releases/download/vX.Y.Z/<asset>.tar.gz
-curl -fsSLO https://github.com/QGrain/cvm/releases/download/vX.Y.Z/<asset>.tar.gz.sig
-gpg --verify <asset>.tar.gz.sig <asset>.tar.gz
+tag=vX.Y.Z
+asset=cvm-x86_64-unknown-linux-musl.tar.gz
+tmp="$(mktemp -d)"
+
+curl -fsSLo "$tmp/cvm-release-signing-key.asc" "https://raw.githubusercontent.com/QGrain/cvm/$tag/assets/keys/cvm-release-signing-key.asc"
+gpg --import "$tmp/cvm-release-signing-key.asc"
+
+curl -fsSLo "$tmp/$asset" "https://github.com/QGrain/cvm/releases/download/$tag/$asset"
+curl -fsSLo "$tmp/$asset.sig" "https://github.com/QGrain/cvm/releases/download/$tag/$asset.sig"
+gpg --verify "$tmp/$asset.sig" "$tmp/$asset"
+
+tar -xzf "$tmp/$asset" -C "$tmp"
+cmp "$tmp/cvm" "${CVM_HOME:-$HOME/.cvm}/bin/cvm" && echo "installed cvm matches signed release asset"
 ```
 ````

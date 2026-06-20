@@ -93,7 +93,8 @@ versions, or incidental README wording unless those are deliberate contracts.
   `docs/`.
 - Do not add network dependencies to ordinary compiler switching paths.
 - Preserve installed toolchains and user defaults during cvm upgrades.
-- Keep release titles as the tag only, such as `v0.0.X`.
-- Use `bump: prepare v0.0.X release` for the final release metadata commit.
+- Keep release titles as the tag only, such as `vX.Y.Z`.
+- Use `bump: prepare vX.Y.Z release` for the final release metadata commit.
 - Release notes that include signed assets must contain a `Verifying Packages`
-  section with `gpg --verify <asset>.sig <asset>` guidance.
+  section that verifies the signed asset and compares the extracted `cvm`
+  binary with the installed `$CVM_HOME/bin/cvm`.
