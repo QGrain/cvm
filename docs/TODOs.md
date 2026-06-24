@@ -14,6 +14,7 @@ current release. It is a planning aid, not a commitment.
   verification failures, and ambiguous version prefixes.
 - Maintainer installation test matrix for representative Linux and macOS
   environments.
+- User guide documentation with quick start examples and advanced workflows.
 
 ## Cross Toolchains
 
@@ -44,3 +45,51 @@ Possible implementation path:
   full source-built cross GCC support.
 - Prioritize common targets such as `aarch64-linux-gnu`, `arm-linux-gnueabihf`,
   `riscv64-linux-gnu`, `x86_64-w64-mingw32`, and `i686-w64-mingw32`.
+
+## Fortran, OpenMP, and MPI
+
+Parallel and scientific-computing environments have been requested, especially
+`gfortran`, OpenMP, and MPI. These are related to C/C++ toolchains but should be
+added in layers instead of being folded into the compiler version model without
+clear boundaries.
+
+Possible implementation path:
+
+- Treat `gfortran` as part of GCC support. Add documented build profile examples
+  for `languages = "c,c++,fortran"` and make `cvm use gcc ...` export Fortran
+  compiler variables such as `FC`, `F77`, and `F90` when `gfortran` is present.
+- Treat OpenMP as compiler runtime support. GCC uses `libgomp`; LLVM/Clang uses
+  the llvm-project `openmp` runtime. Build profiles should make this explicit.
+- Treat MPI as a separate parallel environment that is usually built against a
+  specific compiler version. Future support should record the compiler binding
+  instead of treating OpenMPI or MPICH as compiler versions themselves.
+- Consider OpenMPI and MPICH first if MPI management is added.
+
+## Documentation Ecosystem
+
+The root README files should stay concise. Detailed usage should move into a
+small documentation set under `docs/`, with a static documentation site later if
+the project grows.
+
+Possible implementation path:
+
+- Add a user guide such as `docs/usage.md` with quick start, common workflows,
+  build profiles, source cache, switching behavior, and advanced examples.
+- Keep `docs/troubleshooting.md` separate from the user guide so the primary
+  guide does not become too long.
+- Add documentation-site generation later, for example with mdBook, MkDocs, or
+  Read the Docs plus GitHub Pages.
+
+## Community Workflow
+
+Prepare repository metadata for external contributors before the project grows.
+
+Possible implementation path:
+
+- Add issue labels for feature requests, bugs, documentation, good first issue,
+  help wanted, cross toolchains, parallel computing, installation, release, and
+  platform support.
+- Add issue templates for bug reports, feature requests, and toolchain support
+  requests.
+- Add a long-lived contributor onboarding issue only when there are concrete,
+  scoped starter tasks to avoid creating an empty call for help.
