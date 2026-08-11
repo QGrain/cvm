@@ -216,7 +216,7 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
 
     let version = run(&home, &["--version"]);
     assert!(version.status.success());
-    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.1.0");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "cvm 0.1.1");
 
     let help = run(&home, &["help"]);
     assert!(help.status.success());
@@ -1076,7 +1076,7 @@ fn version_checks_latest_release_without_failing_on_network_success() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.1.1"},
+  "cvm": {"latest": "v0.1.2"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -1085,8 +1085,8 @@ fn version_checks_latest_release_without_failing_on_network_success() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cvm 0.1.0"));
-    assert!(stdout.contains("new version available: v0.1.1"));
+    assert!(stdout.contains("cvm 0.1.1"));
+    assert!(stdout.contains("new version available: v0.1.2"));
     assert!(stdout.contains("cvm upgrade"));
     assert!(stdout.contains("diagnostics:"));
     assert!(stdout.contains("CVM_HOME:"));
@@ -1103,7 +1103,7 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
         r#"{
   "schema_version": 1,
   "generated_at": "2026-06-10T00:00:00Z",
-  "cvm": {"latest": "v0.1.0"},
+  "cvm": {"latest": "v0.1.1"},
   "compilers": {"gcc": [], "llvm": []}
 }"#,
     );
@@ -1116,9 +1116,9 @@ fn upgrade_dry_run_uses_remote_index_latest_when_version_is_omitted() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("upgrade: v0.1.0"));
+    assert!(stdout.contains("upgrade: v0.1.1"));
     assert!(stdout
-        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.1.0/install.sh"));
+        .contains("installer: https://raw.githubusercontent.com/QGrain/cvm/v0.1.1/install.sh"));
 }
 
 #[test]
