@@ -18,6 +18,7 @@ from urllib.parse import urljoin
 GCC_INDEX_URL = "https://ftp.gnu.org/gnu/gcc/"
 LLVM_RELEASES_URL = "https://github.com/llvm/llvm-project/releases"
 LLVM_MIN_VERSION = "9.0.1"
+VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+(?:-rc\d+)?")
 
 
 def version_key(version: str) -> tuple[int, int, int, int, int]:
@@ -115,6 +116,118 @@ def build_index(repo_root: Path, gcc_index_url: str, llvm_releases_url: str) -> 
     }
 
 
+def validate_index(index: object) -> None:
+    if not isinstance(index, dict):
+        raise ValueError("remote index must be a JSON object")
+    if set(index) != {"schema_version", "generated_at", "cvm", "compilers"}:
+        raise ValueError("remote index has unexpected top-level fields")
+    if index["schema_version"] != 1:
+        raise ValueError("remote index schema_version must be 1")
+
+    generated_at = index["generated_at"]
+    if not isinstance(generated_at, str):
+        raise ValueError("remote index generated_at must be a string")
+    try:
+        dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("remote index generated_at is not a valid timestamp") from error
+
+    cvm = index["cvm"]
+    if not isinstance(cvm, dict) or set(cvm) != {"latest"}:
+        raise ValueError("remote index cvm field must contain only latest")
+    latest = cvm["latest"]
+    if not isinstance(latest, str) or not re.fullmatch(r"v\d+\.\d+\.\d+", latest):
+        raise ValueError("remote index cvm.latest is not a valid release version")
+
+    compilers = index["compilers"]
+    if not isinstance(compilers, dict) or set(compilers) != {"gcc", "llvm"}:
+        raise ValueError("remote index compilers field must contain gcc and llvm")
+
+    for tool in ("gcc", "llvm"):
+        entries = compilers[tool]
+        if not isinstance(entries, list) or not entries:
+            raise ValueError(f"remote index {tool} release list must not be empty")
+
+        versions: list[str] = []
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {"version", "date", "url"}:
+                raise ValueError(f"remote index {tool} entries must contain version, date, and url")
+
+            version = entry["version"]
+            date = entry["date"]
+            url = entry["url"]
+            if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
+                raise ValueError(f"remote index {tool} contains an invalid version")
+            if tool == "llvm" and version_key(version) < version_key(LLVM_MIN_VERSION):
+                raise ValueError(f"remote index llvm contains unsupported version {version}")
+            if not isinstance(date, str):
+                raise ValueError(f"remote index {tool} {version} has an invalid date")
+            try:
+                dt.date.fromisoformat(date)
+            except ValueError as error:
+                raise ValueError(f"remote index {tool} {version} has an invalid date") from error
+
+            expected_url = gcc_url(version) if tool == "gcc" else llvm_url(version)
+            if url != expected_url:
+                raise ValueError(f"remote index {tool} {version} has an unexpected source URL")
+            versions.append(version)
+
+        if len(versions) != len(set(versions)):
+            raise ValueError(f"remote index {tool} contains duplicate versions")
+        if versions != sorted(versions, key=version_key, reverse=True):
+            raise ValueError(f"remote index {tool} versions are not sorted newest first")
+
+
+def validate_transition(existing: dict[str, object], updated: dict[str, object]) -> None:
+    existing_compilers = existing["compilers"]
+    updated_compilers = updated["compilers"]
+    assert isinstance(existing_compilers, dict)
+    assert isinstance(updated_compilers, dict)
+
+    for tool in ("gcc", "llvm"):
+        old_entries = {entry["version"]: entry for entry in existing_compilers[tool]}
+        new_entries = {entry["version"]: entry for entry in updated_compilers[tool]}
+        missing = sorted(set(old_entries) - set(new_entries), key=version_key, reverse=True)
+        if missing:
+            raise ValueError(
+                f"remote index update would remove {tool} versions: {', '.join(missing)}"
+            )
+
+        changed = [
+            version for version, entry in old_entries.items() if new_entries[version] != entry
+        ]
+        if changed:
+            changed.sort(key=version_key, reverse=True)
+            raise ValueError(
+                f"remote index update would rewrite existing {tool} entries: {', '.join(changed)}"
+            )
+
+
+def semantic_index(index: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in index.items() if key != "generated_at"}
+
+
+def write_index_if_changed(output: Path, index: dict[str, object]) -> bool:
+    validate_index(index)
+    if output.exists():
+        try:
+            existing = json.loads(output.read_text())
+        except json.JSONDecodeError as error:
+            raise ValueError(f"existing remote index is not valid JSON: {output}") from error
+        validate_index(existing)
+        validate_transition(existing, index)
+        if semantic_index(existing) == semantic_index(index):
+            print("remote index is already up to date")
+            return False
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.tmp")
+    temporary.write_text(json.dumps(index, indent=2, sort_keys=False) + "\n")
+    temporary.replace(output)
+    print(f"updated remote index: {output}")
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="manifests/remote-index.json")
@@ -125,8 +238,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     index = build_index(repo_root, args.gcc_index_url, args.llvm_releases_url)
     output = repo_root / args.output
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(index, indent=2, sort_keys=False) + "\n")
+    write_index_if_changed(output, index)
     return 0
 
 

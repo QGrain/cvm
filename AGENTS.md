@@ -90,6 +90,7 @@ bash -n install.sh
 bash -n scripts/build_llvm-project.sh
 bash -n scripts/build_gcc.sh
 python3 -m py_compile tools/update_remote_index.py
+python3 -m unittest discover -s tests -p 'test_update_remote_index.py'
 python3 -m json.tool manifests/remote-index.json
 ```
 
