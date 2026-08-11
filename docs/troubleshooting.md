@@ -76,6 +76,46 @@ cvm deactivate
 These commands do not remove persistent defaults. Opening a new shell will
 apply any configured `cvm alias default ...` entries again.
 
+## Compiler Build Variables
+
+Starting with `v0.1.1`, cvm selects compiler versions through `PATH` only. It
+does not set or clear these project build variables:
+
+```text
+CC CXX LD LLVM HOSTCC HOSTCXX
+```
+
+Set them explicitly for the build being performed. For example:
+
+```sh
+# GCC-based Linux kernel build
+make CC=gcc HOSTCC=gcc HOSTCXX=g++
+
+# LLVM-based Linux kernel build after `cvm use llvm ...`
+make LLVM=1
+```
+
+cvm `v0.1.0` exported these variables from its shell loader. After upgrading,
+a completely new login session normally starts without those values because
+the new loader no longer creates them. An existing shell, a child shell, or a
+terminal session that inherited the old exported environment can retain them.
+Inspect the current shell with:
+
+```sh
+env | grep -E '^(CC|CXX|LD|LLVM|HOSTCC|HOSTCXX)='
+```
+
+If the displayed values came from cvm `v0.1.0`, clear them once and reload the
+new loader:
+
+```sh
+unset CC CXX LD LLVM HOSTCC HOSTCXX
+. "$CVM_HOME/cvm.sh"
+```
+
+Do not unset values that were intentionally configured by the user, project,
+or another environment manager.
+
 ## Profile Not Loaded
 
 If `cvm use ...` prints shell code instead of switching the current shell, the

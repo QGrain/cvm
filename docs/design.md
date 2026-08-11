@@ -30,13 +30,17 @@ This avoids pointing `PATH` at missing toolchains and silently falling back to
 system compilers.
 
 `cvm use system` and `cvm deactivate` are temporary shell operations. They strip
-cvm-managed toolchain `bin` directories from `PATH` and clear cvm-managed
-compiler variables, but they do not modify persistent defaults under
-`$CVM_HOME/defaults`.
+cvm-managed toolchain `bin` directories from `PATH`, but they do not modify
+persistent defaults under `$CVM_HOME/defaults`. A tool-specific command such as
+`cvm use system llvm` removes only cvm-managed LLVM paths and preserves an
+active cvm-managed GCC path.
 
-When switching versions, cvm clears the compiler variables it owns:
-`CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, and `HOSTCXX`. It does not clear unrelated
-user-managed variables such as `CROSS_COMPILE`.
+cvm selects compiler versions through `PATH` only. It does not set or clear
+project build variables such as `CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, or
+`HOSTCXX`. These variables have build-system-specific semantics and remain
+owned by the user, project, or build command. For example, Linux kernel builds
+can explicitly select LLVM mode with `make LLVM=1` after activating a cvm LLVM
+version.
 
 ## Remote Index
 

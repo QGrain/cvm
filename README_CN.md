@@ -68,6 +68,11 @@ cvm install llvm 21
 
 当某个编译器类别第一次安装受 cvm 管理的版本时，cvm 会自动把它设置为持久默认版本。
 
+cvm 通过把受管理编译器的 `bin` 目录放到 `PATH` 最前面来选择版本。它不会
+设置或清除 `CC`、`CXX`、`LD`、`LLVM`、`HOSTCC`、`HOSTCXX` 等项目构建变量；
+构建系统需要这些变量时应由用户显式配置。例如，选择 cvm 管理的 LLVM 版本后，
+可以用 `make LLVM=1` 进行基于 LLVM 的 Linux 内核构建。
+
 ## 命令
 
 ```text

@@ -77,6 +77,12 @@ cvm install llvm 21
 When the first managed version of a compiler family is installed, cvm sets it
 as the persistent default automatically.
 
+cvm selects managed compiler versions by placing their `bin` directories first
+in `PATH`. It does not set or clear project build variables such as `CC`, `CXX`,
+`LD`, `LLVM`, `HOSTCC`, or `HOSTCXX`; configure those explicitly when a build
+system requires them. For example, use `make LLVM=1` after selecting a cvm LLVM
+version for an LLVM-based Linux kernel build.
+
 ## Commands
 
 ```text

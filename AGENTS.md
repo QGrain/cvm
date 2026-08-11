@@ -57,6 +57,11 @@ modify the current shell. Scripts can use `eval "$(cvm use llvm 21)"`.
 `cvm use system` and `cvm deactivate` are temporary shell operations and must
 not remove persistent defaults.
 
+cvm compiler activation is PATH-only. Do not set or clear project build
+variables such as `CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, or `HOSTCXX` from shell
+initialization, `cvm use`, `cvm env`, or persistent defaults. Those variables
+belong to the user or build system.
+
 ## Build Backends
 
 Build scripts are embedded into the Rust binary and materialized under
