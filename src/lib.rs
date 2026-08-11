@@ -303,28 +303,14 @@ pub fn parse_remote_index_latest(input: &str) -> Result<Version, String> {
 pub fn env_script(tool: Tool, prefix: &Path) -> String {
     let bin = prefix.join("bin");
     let bin = shell_escape_path(&bin);
-    let strip = strip_toolchain_paths_script();
-    match tool {
-        Tool::Llvm => format!(
-            "{strip}{}{}",
-            managed_env_reset_script(),
-            tool_env_exports(tool, &bin)
-        ),
-        Tool::Gcc => format!(
-            "{strip}{}{}",
-            managed_env_reset_script(),
-            tool_env_exports(tool, &bin)
-        ),
-    }
+    format!(
+        "{}export PATH=\"{bin}:$PATH\"\n",
+        strip_toolchain_paths_script(Some(tool))
+    )
 }
 
 fn system_env_script(tool: Option<Tool>) -> String {
-    let reset = match tool {
-        Some(Tool::Llvm) => "unset CC CXX LD LLVM\n",
-        Some(Tool::Gcc) => "unset CC CXX HOSTCC HOSTCXX\n",
-        None => managed_env_reset_script(),
-    };
-    format!("{}{reset}", strip_toolchain_paths_script())
+    strip_toolchain_paths_script(tool)
 }
 
 pub fn init_script(_defaults: &[(Tool, Version, PathBuf)]) -> String {
@@ -2115,7 +2101,7 @@ fn defaults_env_script() -> Result<String, String> {
             let version = Version::parse(&version)?;
             let prefix = install_prefix(tool, &version)?;
             ensure_installed(tool, &version, &prefix)?;
-            defaults.push((tool, prefix.join("bin")));
+            defaults.push(prefix.join("bin"));
         }
     }
 
@@ -2123,10 +2109,12 @@ fn defaults_env_script() -> Result<String, String> {
         return Ok(String::new());
     }
 
-    let mut script = strip_toolchain_paths_script().to_string();
-    script.push_str(managed_env_reset_script());
-    for (tool, bin) in defaults {
-        script.push_str(&tool_env_exports(tool, &shell_escape_path(&bin)));
+    let mut script = strip_toolchain_paths_script(None);
+    for bin in defaults {
+        script.push_str(&format!(
+            "export PATH=\"{}:$PATH\"\n",
+            shell_escape_path(&bin)
+        ));
     }
     Ok(script)
 }
@@ -2168,7 +2156,12 @@ fn shell_escape_path(path: &Path) -> String {
         .replace('"', "\\\"")
 }
 
-fn strip_toolchain_paths_script() -> &'static str {
+fn strip_toolchain_paths_script(tool: Option<Tool>) -> String {
+    let path_pattern = match tool {
+        Some(Tool::Llvm) => r#""${CVM_HOME:-$HOME/.cvm}"/toolchains/llvm/*/bin"#,
+        Some(Tool::Gcc) => r#""${CVM_HOME:-$HOME/.cvm}"/toolchains/gcc/*/bin"#,
+        None => r#""${CVM_HOME:-$HOME/.cvm}"/toolchains/*/*/bin"#,
+    };
     r#"_cvm_strip_toolchain_paths() {
   _cvm_old_path="${PATH:-}"
   _cvm_new_path=""
@@ -2184,7 +2177,7 @@ fn strip_toolchain_paths_script() -> &'static str {
         ;;
     esac
     case "$_cvm_entry" in
-      "${CVM_HOME:-$HOME/.cvm}"/toolchains/*/*/bin) ;;
+      __CVM_TOOLCHAIN_PATH_PATTERN__) ;;
       *)
         if [ -z "$_cvm_new_path" ]; then
           _cvm_new_path="$_cvm_entry"
@@ -2200,21 +2193,7 @@ fn strip_toolchain_paths_script() -> &'static str {
 }
 _cvm_strip_toolchain_paths
 "#
-}
-
-fn managed_env_reset_script() -> &'static str {
-    "unset CC CXX LD LLVM HOSTCC HOSTCXX\n"
-}
-
-fn tool_env_exports(tool: Tool, bin: &str) -> String {
-    match tool {
-        Tool::Llvm => format!(
-            "export PATH=\"{bin}:$PATH\"\nexport LLVM=\"{bin}/\"\nexport CC=\"clang\"\nexport CXX=\"clang++\"\nexport LD=\"ld.lld\"\n"
-        ),
-        Tool::Gcc => format!(
-            "export PATH=\"{bin}:$PATH\"\nexport CC=\"gcc\"\nexport CXX=\"g++\"\nexport HOSTCC=\"gcc\"\nexport HOSTCXX=\"g++\"\n"
-        ),
-    }
+    .replace("__CVM_TOOLCHAIN_PATH_PATTERN__", path_pattern)
 }
 
 fn parse_u32(value: &str, original: &str) -> Result<u32, String> {

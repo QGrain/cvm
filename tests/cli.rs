@@ -469,8 +469,11 @@ fn deactivate_prints_system_env_without_clearing_defaults() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("_cvm_strip_toolchain_paths"));
-    assert!(stdout.contains("unset CC CXX LD LLVM HOSTCC HOSTCXX"));
-    assert!(!stdout.contains("export CC="));
+    assert!(stdout.contains("toolchains/*/*/bin"));
+    for variable in ["CC", "CXX", "LD", "LLVM", "HOSTCC", "HOSTCXX"] {
+        assert!(!stdout.contains(&format!("export {variable}=")));
+        assert!(!stdout.contains(&format!("unset {variable}")));
+    }
     assert_eq!(
         fs::read_to_string(home.join("defaults/llvm"))
             .unwrap()
@@ -487,19 +490,27 @@ fn use_system_accepts_optional_tool_and_does_not_require_installed_toolchains() 
     assert!(all.status.success());
     let stdout = String::from_utf8_lossy(&all.stdout);
     assert!(stdout.contains("_cvm_strip_toolchain_paths"));
-    assert!(stdout.contains("unset CC CXX LD LLVM HOSTCC HOSTCXX"));
+    assert!(stdout.contains("toolchains/*/*/bin"));
 
     let llvm = run(&home, &["use", "system", "llvm"]);
     assert!(llvm.status.success());
     let stdout = String::from_utf8_lossy(&llvm.stdout);
-    assert!(stdout.contains("unset CC CXX LD LLVM"));
-    assert!(!stdout.contains("HOSTCC"));
+    assert!(stdout.contains("toolchains/llvm/*/bin"));
+    assert!(!stdout.contains("toolchains/gcc/*/bin"));
 
     let gcc = run(&home, &["use", "system", "gcc"]);
     assert!(gcc.status.success());
     let stdout = String::from_utf8_lossy(&gcc.stdout);
-    assert!(stdout.contains("unset CC CXX HOSTCC HOSTCXX"));
-    assert!(!stdout.contains(" LLVM "));
+    assert!(stdout.contains("toolchains/gcc/*/bin"));
+    assert!(!stdout.contains("toolchains/llvm/*/bin"));
+
+    for output in [&all, &llvm, &gcc] {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for variable in ["CC", "CXX", "LD", "LLVM", "HOSTCC", "HOSTCXX"] {
+            assert!(!stdout.contains(&format!("export {variable}=")));
+            assert!(!stdout.contains(&format!("unset {variable}")));
+        }
+    }
 
     let invalid = run(&home, &["use", "system", "rust"]);
     assert!(!invalid.status.success());
@@ -939,12 +950,10 @@ fn env_defaults_prints_all_persisted_defaults() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("toolchains/llvm/21.1.8/bin"));
     assert!(stdout.contains("toolchains/gcc/15.1.0/bin"));
-    assert_eq!(
-        stdout
-            .matches("unset CC CXX LD LLVM HOSTCC HOSTCXX")
-            .count(),
-        1
-    );
+    for variable in ["CC", "CXX", "LD", "LLVM", "HOSTCC", "HOSTCXX"] {
+        assert!(!stdout.contains(&format!("export {variable}=")));
+        assert!(!stdout.contains(&format!("unset {variable}")));
+    }
 }
 
 #[test]
@@ -955,7 +964,9 @@ fn use_prints_temporary_shell_environment_without_setting_default() {
     let output = run(&home, &["use", "gcc", "15"]);
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("export CC=\"gcc\""));
+    assert!(stdout.contains("toolchains/gcc/*/bin"));
+    assert!(stdout.contains("toolchains/gcc/15.1.0/bin:$PATH"));
+    assert!(!stdout.contains("export CC="));
     assert!(!home.join("defaults/gcc").exists());
 }
 

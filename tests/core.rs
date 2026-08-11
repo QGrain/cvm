@@ -4,6 +4,7 @@ use cvm::{
 };
 use std::ffi::OsString;
 use std::path::Path;
+use std::process::Command;
 
 #[test]
 fn parses_stable_and_rc_versions() {
@@ -40,21 +41,63 @@ fn parses_tool_specs() {
 }
 
 #[test]
-fn emits_kernel_oriented_env_for_llvm_and_gcc() {
+fn emits_path_only_env_for_llvm_and_gcc() {
     let llvm = env_script(Tool::Llvm, Path::new("/opt/cvm/toolchains/llvm/21.1.8"));
     assert!(llvm.contains("_cvm_strip_toolchain_paths"));
-    assert!(llvm.contains("unset CC CXX LD LLVM HOSTCC HOSTCXX"));
+    assert!(llvm.contains("toolchains/llvm/*/bin"));
+    assert!(!llvm.contains("toolchains/gcc/*/bin"));
     assert!(llvm.contains("export PATH=\"/opt/cvm/toolchains/llvm/21.1.8/bin:$PATH\""));
-    assert!(llvm.contains("export LLVM=\"/opt/cvm/toolchains/llvm/21.1.8/bin/\""));
-    assert!(llvm.contains("export LD=\"ld.lld\""));
 
     let gcc = env_script(Tool::Gcc, Path::new("/opt/cvm/toolchains/gcc/15.1.0"));
     assert!(gcc.contains("_cvm_strip_toolchain_paths"));
-    assert!(gcc.contains("unset CC CXX LD LLVM HOSTCC HOSTCXX"));
-    assert!(gcc.contains("export CC=\"gcc\""));
-    assert!(gcc.contains("export HOSTCC=\"gcc\""));
-    assert!(!gcc.contains("export LLVM="));
-    assert!(!gcc.contains("export LD="));
+    assert!(gcc.contains("toolchains/gcc/*/bin"));
+    assert!(!gcc.contains("toolchains/llvm/*/bin"));
+    assert!(gcc.contains("export PATH=\"/opt/cvm/toolchains/gcc/15.1.0/bin:$PATH\""));
+
+    for script in [&llvm, &gcc] {
+        for variable in ["CC", "CXX", "LD", "LLVM", "HOSTCC", "HOSTCXX"] {
+            assert!(!script.contains(&format!("export {variable}=")));
+            assert!(!script.contains(&format!("unset {variable}")));
+        }
+    }
+}
+
+#[test]
+fn evaluating_env_script_preserves_user_build_variables_and_other_tool_family() {
+    let script = env_script(Tool::Llvm, Path::new("/opt/cvm/toolchains/llvm/21.1.8"));
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(
+            "eval \"$CVM_TEST_SCRIPT\"\n\
+             printf '%s\\n' \"$CC|$CXX|$LD|$LLVM|$HOSTCC|$HOSTCXX\"\n\
+             printf '%s\\n' \"$PATH\"",
+        )
+        .env("CVM_TEST_SCRIPT", script)
+        .env("CVM_HOME", "/opt/cvm")
+        .env(
+            "PATH",
+            "/opt/cvm/toolchains/llvm/20.1.8/bin:/opt/cvm/toolchains/gcc/15.1.0/bin:/usr/bin",
+        )
+        .env("CC", "ccache gcc")
+        .env("CXX", "ccache g++")
+        .env("LD", "gold")
+        .env("LLVM", "1")
+        .env("HOSTCC", "host-gcc")
+        .env("HOSTCXX", "host-g++")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next(),
+        Some("ccache gcc|ccache g++|gold|1|host-gcc|host-g++")
+    );
+    assert_eq!(
+        lines.next(),
+        Some("/opt/cvm/toolchains/llvm/21.1.8/bin:/opt/cvm/toolchains/gcc/15.1.0/bin:/usr/bin")
+    );
 }
 
 #[test]
