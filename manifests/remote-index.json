@@ -1,11 +1,16 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-01T06:16:34Z",
+  "generated_at": "2026-09-01T08:53:07Z",
   "cvm": {
     "latest": "v0.1.1"
   },
   "compilers": {
     "gcc": [
+      {
+        "version": "16.2.0",
+        "date": "2026-08-07",
+        "url": "https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz"
+      },
       {
         "version": "16.1.0",
         "date": "2026-04-30",
@@ -658,6 +663,16 @@
       }
     ],
     "llvm": [
+      {
+        "version": "23.1.0",
+        "date": "2026-08-25",
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0/llvm-project-23.1.0.src.tar.xz"
+      },
+      {
+        "version": "23.1.0-rc3",
+        "date": "2026-08-12",
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0-rc3/llvm-project-23.1.0-rc3.src.tar.xz"
+      },
       {
         "version": "23.1.0-rc2",
         "date": "2026-07-28",
