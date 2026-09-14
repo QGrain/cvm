@@ -38,14 +38,13 @@ python3 -m json.tool manifests/remote-index.json
 - Use concise imperative commit subjects, for example `Add release workflow`.
 - Keep unrelated changes in separate commits or PRs.
 - Include tests for behavior changes.
-- For release index changes, let the synchronization workflow open the PR when
-  possible.
+- Let the synchronization workflow manage compiler release index changes.
 
 The synchronization workflow checks upstream compiler releases monthly. It
-does not create a PR when the indexed content is unchanged. Valid updates are
-restricted to `manifests/remote-index.json` and merged automatically with a
-single squash commit; destructive or malformed index updates fail validation
-and require maintainer review.
+does not create a commit when the indexed content is unchanged. Valid,
+append-only updates are restricted to `manifests/remote-index.json` and pushed
+directly to `main`; destructive or malformed updates fail validation. The
+workflow does not change `cvm.latest`, which remains part of release metadata.
 
 For small releases, a single release-focused commit is acceptable:
 

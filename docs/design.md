@@ -54,7 +54,9 @@ version.
 `CVM_REMOTE_INDEX_URL` to point cvm at a mirrored index in restricted networks.
 
 The index is synchronized by `.github/workflows/synchronize-remote-index.yml`
-using `tools/update_remote_index.py`.
+using `tools/update_remote_index.py`. Valid append-only compiler updates are
+committed directly to `main`; the workflow preserves the separately maintained
+`cvm.latest` release metadata.
 
 ## Build Backends
 

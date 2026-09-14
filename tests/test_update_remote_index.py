@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -45,6 +46,22 @@ def sample_index() -> dict[str, object]:
 
 
 class RemoteIndexUpdateTests(unittest.TestCase):
+    def test_build_index_preserves_cvm_release_metadata(self) -> None:
+        existing = sample_index()
+        gcc_html = '<a href="gcc-15.1.0/">gcc-15.1.0/</a> 2025-04-25'
+
+        with (
+            mock.patch.object(remote_index, "fetch_text", return_value=gcc_html),
+            mock.patch.object(
+                remote_index,
+                "fetch_llvm_releases",
+                return_value=existing["compilers"]["llvm"],
+            ),
+        ):
+            updated = remote_index.build_index(existing, "gcc-index", "llvm-releases")
+
+        self.assertEqual(updated["cvm"], {"latest": "v0.1.1"})
+
     def test_unchanged_index_preserves_existing_timestamp_and_file(self) -> None:
         existing = sample_index()
         updated = copy.deepcopy(existing)
@@ -100,6 +117,18 @@ class RemoteIndexUpdateTests(unittest.TestCase):
             output.write_text(json.dumps(existing))
 
             with self.assertRaisesRegex(ValueError, "would rewrite existing llvm entries: 21.1.8"):
+                remote_index.write_index_if_changed(output, updated)
+
+    def test_update_rejects_cvm_metadata_changes(self) -> None:
+        existing = sample_index()
+        updated = copy.deepcopy(existing)
+        updated["cvm"]["latest"] = "v0.1.2"
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "remote-index.json"
+            output.write_text(json.dumps(existing))
+
+            with self.assertRaisesRegex(ValueError, "must preserve cvm metadata"):
                 remote_index.write_index_if_changed(output, updated)
 
 

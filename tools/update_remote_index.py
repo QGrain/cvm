@@ -9,7 +9,6 @@ import html
 import json
 import re
 import sys
-import tomllib
 import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin
@@ -99,16 +98,16 @@ def fetch_llvm_releases(start_url: str) -> list[dict[str, str]]:
     return sorted(entries.values(), key=lambda entry: version_key(entry["version"]), reverse=True)
 
 
-def cvm_latest(repo_root: Path) -> str:
-    manifest = tomllib.loads((repo_root / "Cargo.toml").read_text())
-    return f"v{manifest['package']['version']}"
-
-
-def build_index(repo_root: Path, gcc_index_url: str, llvm_releases_url: str) -> dict[str, object]:
+def build_index(
+    existing: dict[str, object], gcc_index_url: str, llvm_releases_url: str
+) -> dict[str, object]:
+    validate_index(existing)
+    cvm = existing["cvm"]
+    assert isinstance(cvm, dict)
     return {
-        "schema_version": 1,
+        "schema_version": existing["schema_version"],
         "generated_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-        "cvm": {"latest": cvm_latest(repo_root)},
+        "cvm": {"latest": cvm["latest"]},
         "compilers": {
             "gcc": parse_gcc_index(fetch_text(gcc_index_url)),
             "llvm": fetch_llvm_releases(llvm_releases_url),
@@ -179,6 +178,9 @@ def validate_index(index: object) -> None:
 
 
 def validate_transition(existing: dict[str, object], updated: dict[str, object]) -> None:
+    if existing["cvm"] != updated["cvm"]:
+        raise ValueError("remote index synchronization must preserve cvm metadata")
+
     existing_compilers = existing["compilers"]
     updated_compilers = updated["compilers"]
     assert isinstance(existing_compilers, dict)
@@ -236,8 +238,16 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    index = build_index(repo_root, args.gcc_index_url, args.llvm_releases_url)
     output = repo_root / args.output
+    if not output.exists():
+        raise ValueError(f"existing remote index does not exist: {output}")
+    try:
+        existing = json.loads(output.read_text())
+    except json.JSONDecodeError as error:
+        raise ValueError(f"existing remote index is not valid JSON: {output}") from error
+    validate_index(existing)
+
+    index = build_index(existing, args.gcc_index_url, args.llvm_releases_url)
     write_index_if_changed(output, index)
     return 0
 
