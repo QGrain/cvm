@@ -21,6 +21,12 @@ switching.
 Install the latest release:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash
+```
+
+Install a specific release:
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.1.1/install.sh | bash
 ```
 
@@ -64,6 +70,7 @@ cvm cache list
 cvm use llvm 21
 cvm which llvm
 cvm alias default llvm 21.1.8
+cvm alias default llvm system
 cvm use system
 cvm deactivate
 
@@ -95,7 +102,7 @@ cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
 cvm use <llvm|gcc|system> [version-or-prefix]
-cvm alias default <llvm|gcc> <version-or-prefix>
+cvm alias default <llvm|gcc> <version-or-prefix|system>
 cvm current [llvm|gcc]
 cvm env <llvm|gcc> [version-or-prefix]
 cvm which <llvm|gcc> [version-or-prefix]
@@ -110,7 +117,10 @@ In interactive shells that source `$CVM_HOME/cvm.sh`, `cvm use ...` updates the
 current shell like `nvm`. The same shell loader registers bash/zsh completion
 when the shell supports it. `cvm use system` and `cvm deactivate` return the
 current shell to system compiler resolution without changing persistent
-defaults. In scripts or one-off shells, use:
+defaults. Use `cvm alias default <llvm|gcc> system` to make that choice
+persistent for future shells. `cvm current` reports the toolchain selected by
+the current `PATH`, which can differ from the persistent default. In scripts or
+one-off shells, use:
 
 ```sh
 eval "$(cvm use llvm 21)"

@@ -17,7 +17,7 @@ Usage: install.sh [--version VERSION]
 
 Environment:
   CVM_REPO     GitHub repo, default: ${repo}
-  CVM_VERSION  Release tag, default: $(cvm_latest_version)
+  CVM_VERSION  Release tag, default: latest stable ($(cvm_latest_version))
   CVM_HOME     Install and data root, default: ${cvm_home}
   PROFILE      Shell profile to update, or /dev/null to skip profile edits
 EOF

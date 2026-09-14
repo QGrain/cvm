@@ -17,6 +17,12 @@ cvm 面向 Linux 内核开发、syzkaller 工作流、编译器测试、CI，以
 安装最新的 release：
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/main/install.sh | bash
+```
+
+安装指定 release：
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/QGrain/cvm/v0.1.1/install.sh | bash
 ```
 
@@ -56,6 +62,7 @@ cvm cache list
 cvm use llvm 21
 cvm which llvm
 cvm alias default llvm 21.1.8
+cvm alias default llvm system
 cvm use system
 cvm deactivate
 
@@ -85,7 +92,7 @@ cvm profile list
 cvm ls-remote [llvm|gcc] [prefix]
 cvm ls [llvm|gcc]
 cvm use <llvm|gcc|system> [version-or-prefix]
-cvm alias default <llvm|gcc> <version-or-prefix>
+cvm alias default <llvm|gcc> <version-or-prefix|system>
 cvm current [llvm|gcc]
 cvm env <llvm|gcc> [version-or-prefix]
 cvm which <llvm|gcc> [version-or-prefix]
@@ -96,7 +103,7 @@ cvm init
 cvm version
 ```
 
-交互式 shell source `$CVM_HOME/cvm.sh` 后，`cvm use ...` 会像 `nvm` 一样直接更新当前 shell。该 shell loader 也会在 shell 支持时注册 bash/zsh completion。`cvm use system` 和 `cvm deactivate` 可以让当前 shell 临时回到系统编译器解析，但不会修改持久默认版本。脚本或一次性 shell 中可以使用：
+交互式 shell source `$CVM_HOME/cvm.sh` 后，`cvm use ...` 会像 `nvm` 一样直接更新当前 shell。该 shell loader 也会在 shell 支持时注册 bash/zsh completion。`cvm use system` 和 `cvm deactivate` 可以让当前 shell 临时回到系统编译器解析，但不会修改持久默认版本。使用 `cvm alias default <llvm|gcc> system` 可以让后续 shell 持久使用系统编译器。`cvm current` 根据当前 `PATH` 报告实际选择的工具链，因此其结果可能不同于持久默认版本。脚本或一次性 shell 中可以使用：
 
 ```sh
 eval "$(cvm use llvm 21)"

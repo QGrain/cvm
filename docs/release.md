@@ -29,6 +29,12 @@ asset with the same name plus `.sig`.
 
 ## Installer Behavior
 
+The unversioned installation command downloads `install.sh` from `main`. That
+script's `cvm_latest_version()` must always name the latest stable release, so
+it installs a release asset rather than unreleased code from the default
+branch. A versioned `vX.Y.Z/install.sh` URL remains available for reproducible
+installation of a specific release. Neither path requires a GitHub API call.
+
 `install.sh` first tries to download the matching binary asset for the selected
 tag. If no asset is available, it downloads the tagged source archive and builds
 cvm locally with Cargo.
@@ -53,8 +59,13 @@ bash -n install.sh
 bash -n scripts/build_llvm-project.sh
 bash -n scripts/build_gcc.sh
 python3 -m py_compile tools/update_remote_index.py
+python3 -m unittest discover -s tests -p 'test_update_remote_index.py'
 python3 -m json.tool manifests/remote-index.json
 ```
+
+Ensure `cvm_latest_version()` in `install.sh` and the versioned installation
+examples name the release being prepared. Once the release assets are
+available, the `main/install.sh` command becomes the latest-release installer.
 
 Then create an annotated tag and push it:
 

@@ -13,6 +13,8 @@ fn docs_use_qgrain_repository_and_initial_version() {
 
     assert!(readme.contains("v0.1.1"));
     assert!(readme_cn.contains("v0.1.1"));
+    assert!(readme.contains("QGrain/cvm/main/install.sh"));
+    assert!(readme_cn.contains("QGrain/cvm/main/install.sh"));
     assert!(readme.contains("assets/logos/cvm-logo-color.svg"));
     assert!(readme_cn.contains("assets/logos/cvm-logo-color.svg"));
     assert!(readme.contains("$HOME/.cvm"));

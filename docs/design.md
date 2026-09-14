@@ -33,7 +33,12 @@ system compilers.
 cvm-managed toolchain `bin` directories from `PATH`, but they do not modify
 persistent defaults under `$CVM_HOME/defaults`. A tool-specific command such as
 `cvm use system llvm` removes only cvm-managed LLVM paths and preserves an
-active cvm-managed GCC path.
+active cvm-managed GCC path. `cvm alias default <llvm|gcc> system` removes the
+corresponding persistent default so future shells use system resolution.
+
+`cvm current` derives the active managed version from `PATH`, not from the
+persistent default files. The first matching cvm toolchain path determines the
+reported version; when no matching path exists, the result is `system`.
 
 cvm selects compiler versions through `PATH` only. It does not set or clear
 project build variables such as `CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, or

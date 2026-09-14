@@ -41,7 +41,7 @@ Primary user commands include:
 - `cvm use system [llvm|gcc]`
 - `cvm deactivate`
 - `cvm env <llvm|gcc> [version-or-prefix]`
-- `cvm alias default <llvm|gcc> <version-or-prefix>`
+- `cvm alias default <llvm|gcc> <version-or-prefix|system>`
 - `cvm ls [llvm|gcc]`
 - `cvm ls-remote [llvm|gcc] [prefix]`
 - `cvm which <llvm|gcc> [version-or-prefix]`
@@ -52,10 +52,12 @@ Primary user commands include:
 - `cvm profile list`
 - `cvm init`
 
-Interactive shells source `$CVM_HOME/cvm.sh`, which wraps `cvm use` so it can
-modify the current shell. Scripts can use `eval "$(cvm use llvm 21)"`.
+Interactive shells source `$CVM_HOME/cvm.sh`, which wraps `cvm use` and
+`cvm deactivate` so they can modify the current shell. Scripts can use
+`eval "$(cvm use llvm 21)"`.
 `cvm use system` and `cvm deactivate` are temporary shell operations and must
-not remove persistent defaults.
+not remove persistent defaults. `cvm alias default <llvm|gcc> system` clears
+the corresponding persistent default for future shells.
 
 cvm compiler activation is PATH-only. Do not set or clear project build
 variables such as `CC`, `CXX`, `LD`, `LLVM`, `HOSTCC`, or `HOSTCXX` from shell

@@ -76,6 +76,18 @@ cvm deactivate
 These commands do not remove persistent defaults. Opening a new shell will
 apply any configured `cvm alias default ...` entries again.
 
+To use the system compiler persistently in future shells, clear the managed
+default for that compiler family:
+
+```sh
+cvm alias default llvm system
+cvm alias default gcc system
+```
+
+This does not modify the current shell. Run `cvm use system` as well when the
+current shell should switch immediately. `cvm current` reports the selection
+that is active in the current `PATH`; `cvm alias` reports persistent defaults.
+
 ## Compiler Build Variables
 
 Starting with `v0.1.1`, cvm selects compiler versions through `PATH` only. It
