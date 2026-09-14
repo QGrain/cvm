@@ -230,7 +230,7 @@ fn version_and_help_do_not_expose_removed_kernel_or_source_flags() {
     assert!(help.contains("cvm use <llvm|gcc|system> [version-or-prefix]"));
     assert!(help.contains("cvm deactivate"));
     assert!(help.contains("cvm upgrade [version] [--dry-run]"));
-    assert!(help.contains("cvm alias default <llvm|gcc> <version-or-prefix>"));
+    assert!(help.contains("cvm alias default <llvm|gcc> <version-or-prefix|system>"));
     assert!(!help.contains("cvm completion <bash|zsh>"));
     assert!(!help.contains("--source"));
     assert!(!help.contains("--minimal"));
@@ -440,6 +440,7 @@ fn completion_outputs_bash_and_zsh_scripts() {
     ));
     assert!(!bash.contains(" version completion help"));
     assert!(bash.contains("compgen -W \"$tools system\""));
+    assert!(bash.contains("_cvm_installed_versions \"$tool\") system"));
     assert!(bash.contains("command cvm ls \"$tool\""));
 
     let zsh = run(&home, &["completion", "zsh"]);
@@ -449,6 +450,7 @@ fn completion_outputs_bash_and_zsh_scripts() {
     assert!(zsh.contains("_cvm()"));
     assert!(zsh.contains("compdef _cvm cvm"));
     assert!(zsh.contains("compadd -- $tools system"));
+    assert!(zsh.contains("versions+=(system)"));
     assert!(zsh.contains("command cvm ls \"$tool\""));
 
     let invalid = run(&home, &["completion", "fish"]);
@@ -910,6 +912,41 @@ fn alias_default_persists_and_env_uses_it() {
     assert!(env_output.status.success());
     let stdout = String::from_utf8_lossy(&env_output.stdout);
     assert!(stdout.contains("toolchains/llvm/21.1.8/bin"));
+
+    let system = run(&home, &["alias", "default", "llvm", "system"]);
+    assert!(system.status.success());
+    assert!(String::from_utf8_lossy(&system.stdout).contains("default llvm -> system"));
+    assert!(!home.join("defaults/llvm").exists());
+
+    let aliases = run(&home, &["alias"]);
+    assert!(aliases.status.success());
+    assert!(String::from_utf8_lossy(&aliases.stdout).contains("default llvm -> system"));
+}
+
+#[test]
+fn current_reports_the_active_path_instead_of_the_persistent_default() {
+    let home = cvm_home("current");
+    mark_installed(&home, "llvm", "20.1.8");
+    mark_installed(&home, "llvm", "21.1.8");
+    assert!(run(&home, &["alias", "default", "llvm", "20.1.8"])
+        .status
+        .success());
+
+    let active_bin = home.join("toolchains/llvm/21.1.8/bin");
+    let active_path = format!("{}:/usr/bin", active_bin.display());
+    let active = run_with_env(&home, &["current", "llvm"], &[("PATH", &active_path)]);
+    assert!(active.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&active.stdout).trim(),
+        "llvm: 21.1.8"
+    );
+
+    let system = run_with_env(&home, &["current", "llvm"], &[("PATH", "/usr/bin")]);
+    assert!(system.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&system.stdout).trim(),
+        "llvm: system"
+    );
 }
 
 #[test]
@@ -965,7 +1002,7 @@ fn use_prints_temporary_shell_environment_without_setting_default() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("toolchains/gcc/*/bin"));
-    assert!(stdout.contains("toolchains/gcc/15.1.0/bin:$PATH"));
+    assert!(stdout.contains("toolchains/gcc/15.1.0/bin':\"$PATH\""));
     assert!(!stdout.contains("export CC="));
     assert!(!home.join("defaults/gcc").exists());
 }

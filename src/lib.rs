@@ -302,9 +302,9 @@ pub fn parse_remote_index_latest(input: &str) -> Result<Version, String> {
 
 pub fn env_script(tool: Tool, prefix: &Path) -> String {
     let bin = prefix.join("bin");
-    let bin = shell_escape_path(&bin);
+    let bin = shell_quote_path(&bin);
     format!(
-        "{}export PATH=\"{bin}:$PATH\"\n",
+        "{}export PATH={bin}:\"$PATH\"\n",
         strip_toolchain_paths_script(Some(tool))
     )
 }
@@ -329,12 +329,13 @@ if command -v cvm >/dev/null 2>&1; then
 fi
 
 cvm() {
-  if [ "$#" -ge 1 ] && [ "$1" = "use" ]; then
-    shift
-    eval "$(command cvm use "$@")"
-  else
-    command cvm "$@"
+  if [ "$#" -ge 1 ] && { [ "$1" = "use" ] || [ "$1" = "deactivate" ]; }; then
+    local _cvm_shell_output
+    _cvm_shell_output="$(command cvm "$@")" || return $?
+    eval "$_cvm_shell_output"
+    return $?
   fi
+  command cvm "$@"
 }
 
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -868,9 +869,16 @@ fn cmd_alias(args: &[String]) -> Result<(), String> {
     match args[0].as_str() {
         "default" => {
             if args.len() != 3 {
-                return Err("usage: cvm alias default <llvm|gcc> <version-or-prefix>".into());
+                return Err(
+                    "usage: cvm alias default <llvm|gcc> <version-or-prefix|system>".into(),
+                );
             }
             let tool = Tool::from_str(&args[1])?;
+            if args[2] == "system" {
+                clear_global_version(tool)?;
+                println!("default {tool} -> system");
+                return Ok(());
+            }
             let version = resolve_local_or_exact_version(tool, &args[2])?;
             let prefix = install_prefix(tool, &version)?;
             ensure_installed(tool, &version, &prefix)?;
@@ -885,6 +893,9 @@ fn cmd_alias(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_current(args: &[String]) -> Result<(), String> {
+    if args.len() > 1 {
+        return Err("usage: cvm current [llvm|gcc]".into());
+    }
     let tools = if args.is_empty() {
         Tool::all().to_vec()
     } else {
@@ -892,9 +903,9 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
     };
 
     for tool in tools {
-        match read_global_version(tool)? {
+        match current_managed_version(tool)? {
             Some(version) => println!("{tool}: {version}"),
-            None => println!("{tool}: <none>"),
+            None => println!("{tool}: system"),
         }
     }
     Ok(())
@@ -1091,7 +1102,7 @@ _cvm_complete() {{
         COMPREPLY=( $(compgen -W "$tools" -- "$cur") )
       elif [ "$COMP_CWORD" -eq 4 ] && [ "${{COMP_WORDS[2]}}" = "default" ]; then
         tool="${{COMP_WORDS[3]}}"
-        COMPREPLY=( $(compgen -W "$(_cvm_installed_versions "$tool")" -- "$cur") )
+        COMPREPLY=( $(compgen -W "$(_cvm_installed_versions "$tool") system" -- "$cur") )
       fi
       ;;
   esac
@@ -1175,6 +1186,7 @@ _cvm() {{
         compadd -- $tools
       elif [[ "$words[3]" == default && CURRENT == 5 ]]; then
         versions=(${{(f)"$(_cvm_installed_versions "$words[4]")"}})
+        versions+=(system)
         compadd -- $versions
       fi
       ;;
@@ -1193,7 +1205,7 @@ fn list_aliases() -> Result<(), String> {
     for tool in Tool::all() {
         match read_global_version(tool)? {
             Some(version) => println!("default {tool} -> {version}"),
-            None => println!("default {tool} -> <none>"),
+            None => println!("default {tool} -> system"),
         }
     }
     Ok(())
@@ -1967,7 +1979,7 @@ fn print_default_diagnostic(home: &Path, tool: Tool) {
             }
             Err(err) => println!("  {label}: {version} (invalid: {err})"),
         },
-        Ok(None) => println!("  {label}: <none>"),
+        Ok(None) => println!("  {label}: system"),
         Err(err) => println!("  {label}: <error: {err}>"),
     }
 }
@@ -2057,19 +2069,49 @@ fn write_global_version(tool: Tool, version: &Version) -> Result<(), String> {
         .map_err(|e| format!("failed to write global default: {e}"))
 }
 
-fn clear_global_version_if_matches(tool: Tool, version: &Version) -> Result<(), String> {
+fn clear_global_version(tool: Tool) -> Result<(), String> {
     let path = cvm_home()?.join("defaults").join(tool.as_str());
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("failed to remove {}: {e}", path.display())),
+    }
+}
+
+fn clear_global_version_if_matches(tool: Tool, version: &Version) -> Result<(), String> {
     let Some(current) = read_global_version(tool)? else {
         return Ok(());
     };
     if current == version.to_string() {
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("failed to remove {}: {e}", path.display())),
-        }
+        clear_global_version(tool)?;
     }
     Ok(())
+}
+
+fn current_managed_version(tool: Tool) -> Result<Option<Version>, String> {
+    let root = cvm_home()?.join("toolchains").join(tool.as_str());
+    let Some(path) = env::var_os("PATH") else {
+        return Ok(None);
+    };
+
+    for bin in env::split_paths(&path) {
+        if !bin.is_dir() || bin.file_name().and_then(|name| name.to_str()) != Some("bin") {
+            continue;
+        }
+        let Some(prefix) = bin.parent() else {
+            continue;
+        };
+        if prefix.parent() != Some(root.as_path()) {
+            continue;
+        }
+        let Some(version) = prefix.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if let Ok(version) = Version::parse(version) {
+            return Ok(Some(version));
+        }
+    }
+    Ok(None)
 }
 
 fn read_global_version(tool: Tool) -> Result<Option<String>, String> {
@@ -2112,8 +2154,8 @@ fn defaults_env_script() -> Result<String, String> {
     let mut script = strip_toolchain_paths_script(None);
     for bin in defaults {
         script.push_str(&format!(
-            "export PATH=\"{}:$PATH\"\n",
-            shell_escape_path(&bin)
+            "export PATH={}:\"$PATH\"\n",
+            shell_quote_path(&bin)
         ));
     }
     Ok(script)
@@ -2149,11 +2191,8 @@ fn run_command(mut command: Command) -> Result<(), String> {
     }
 }
 
-fn shell_escape_path(path: &Path) -> String {
-    path.as_os_str()
-        .to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
+fn shell_quote_path(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
 }
 
 fn strip_toolchain_paths_script(tool: Option<Tool>) -> String {
@@ -2218,7 +2257,7 @@ fn print_help() {
            cvm ls-remote [llvm|gcc] [prefix]\n\
            cvm ls [llvm|gcc]\n\
            cvm use <llvm|gcc|system> [version-or-prefix]\n\
-           cvm alias default <llvm|gcc> <version-or-prefix>\n\
+           cvm alias default <llvm|gcc> <version-or-prefix|system>\n\
            cvm current [llvm|gcc]\n\
            cvm env <llvm|gcc> [version-or-prefix]\n\
            cvm which <llvm|gcc> [version-or-prefix]\n\
@@ -2241,6 +2280,7 @@ fn print_help() {
            cvm deactivate\n\
            cvm which llvm\n\
            cvm alias default llvm 21.1.8\n\
+           cvm alias default llvm system\n\
            cvm upgrade --dry-run\n\
            eval \"$(cvm init)\"\n"
     );

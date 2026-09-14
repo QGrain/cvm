@@ -46,13 +46,16 @@ fn emits_path_only_env_for_llvm_and_gcc() {
     assert!(llvm.contains("_cvm_strip_toolchain_paths"));
     assert!(llvm.contains("toolchains/llvm/*/bin"));
     assert!(!llvm.contains("toolchains/gcc/*/bin"));
-    assert!(llvm.contains("export PATH=\"/opt/cvm/toolchains/llvm/21.1.8/bin:$PATH\""));
+    assert!(llvm.contains("export PATH='/opt/cvm/toolchains/llvm/21.1.8/bin':\"$PATH\""));
 
     let gcc = env_script(Tool::Gcc, Path::new("/opt/cvm/toolchains/gcc/15.1.0"));
     assert!(gcc.contains("_cvm_strip_toolchain_paths"));
     assert!(gcc.contains("toolchains/gcc/*/bin"));
     assert!(!gcc.contains("toolchains/llvm/*/bin"));
-    assert!(gcc.contains("export PATH=\"/opt/cvm/toolchains/gcc/15.1.0/bin:$PATH\""));
+    assert!(gcc.contains("export PATH='/opt/cvm/toolchains/gcc/15.1.0/bin':\"$PATH\""));
+
+    let quoted = env_script(Tool::Llvm, Path::new("/tmp/cvm'$HOME`command`"));
+    assert!(quoted.contains("'/tmp/cvm'\"'\"'$HOME`command`/bin':\"$PATH\""));
 
     for script in [&llvm, &gcc] {
         for variable in ["CC", "CXX", "LD", "LLVM", "HOSTCC", "HOSTCXX"] {
@@ -101,7 +104,7 @@ fn evaluating_env_script_preserves_user_build_variables_and_other_tool_family() 
 }
 
 #[test]
-fn init_script_loads_defaults_dynamically_and_wraps_use() {
+fn init_script_loads_defaults_and_wraps_shell_mutating_commands() {
     let script = init_script(&[(
         Tool::Llvm,
         Version::parse("21.1.8").unwrap(),
@@ -110,8 +113,9 @@ fn init_script_loads_defaults_dynamically_and_wraps_use() {
 
     assert!(!script.contains("export LLVM=\"/opt/cvm/toolchains/llvm/21.1.8/bin/\""));
     assert!(script.contains("cvm() {"));
-    assert!(script.contains("shift"));
-    assert!(script.contains("eval \"$(command cvm use \"$@\")\""));
+    assert!(script.contains("[ \"$1\" = \"use\" ] || [ \"$1\" = \"deactivate\" ]"));
+    assert!(script.contains("_cvm_shell_output=\"$(command cvm \"$@\")\" || return $?"));
+    assert!(script.contains("eval \"$_cvm_shell_output\""));
     assert!(script.contains("export PATH=\"$CVM_HOME/bin:$PATH\""));
     assert!(script.contains("command cvm env --defaults"));
     assert!(script.contains("command cvm completion bash"));
